@@ -3,34 +3,23 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg
 import cv2, logging, wx
 
-class RedirectText(object):
-    def __init__(self, text_ctrl):
-        self.text_ctrl = text_ctrl
-    def write(self, s):
-        wx.CallAfter(self.text_ctrl.WriteText, s)
-
-### Wx ###
 class View(wx.Frame):
-    def __init__(self, parent, subs=[], conditions=[], manipulations=[], size=(1200,720)):
-        wx.Frame.__init__(self, parent, title="Puffs Experiment Control", size=size)
+    def __init__(self, parent, subs=[], size=(1200,720)):
+        wx.Frame.__init__(self, parent, title="Eyeblink Control", size=size)
         self.Center()
         
         self.n_perf_show = 50
         self.n_lick_show = 1200
-        
+
         # Leftmost panel
         self.panel_left_sizer = wx.BoxSizer(wx.VERTICAL)
         self.add_sub_button = wx.Button(self, label='Add Subject')
         self.sub_box = wx.ListBox(self)
         self.sub_names,self.sub_strs = subs,[]
         self.update_sub_choices()
-        self.cond_box = wx.ListBox(self, choices=conditions)
-        self.manip_box = wx.ListBox(self, choices=manipulations)
         self.panel_left_sizer.Add(self.add_sub_button)
         self.panel_left_sizer.Add(self.sub_box, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_left_sizer.Add(self.cond_box, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_left_sizer.Add(self.manip_box, flag=wx.EXPAND|wx.ALL, proportion=1)
-
+        
         # top panel
         self.panel_top = wx.Panel(self,1)
         self.panel_top_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -40,58 +29,17 @@ class View(wx.Frame):
         self.session_runtime_widg = wx.TextCtrl(self.panel_top)
         self.session_runtime_widg.SetEditable(False)
         self.session_runtime_lab = wx.StaticText(self.panel_top, label='Session time: ', style=wx.ALIGN_RIGHT)
-        self.trial_runtime_widg = wx.TextCtrl(self.panel_top)
-        self.trial_runtime_widg.SetEditable(False)
-        self.trial_runtime_lab = wx.StaticText(self.panel_top, label='Trial time: ', style=wx.ALIGN_RIGHT)
-        self.rewarded_widg = wx.TextCtrl(self.panel_top)
-        self.rewarded_widg.SetEditable(False)
-        self.rewarded_lab = wx.StaticText(self.panel_top, label='Rewards: ', style=wx.ALIGN_RIGHT)
-        self.bias_widg = wx.TextCtrl(self.panel_top)
-        self.bias_widg.SetEditable(False)
-        self.bias_lab = wx.StaticText(self.panel_top, label='RL Bias: ', style=wx.ALIGN_RIGHT)
+        self.trial_type_widg = wx.TextCtrl(self.panel_top)
+        self.trial_type_widg.SetEditable(False)
+        self.trial_type_lab = wx.StaticText(self.panel_top, label='Trial type: ', style=wx.ALIGN_RIGHT)
         self.panel_top_sizer.Add(self.trial_n_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top_sizer.Add(self.trial_n_widg, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_top_sizer.Add(self.session_runtime_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top_sizer.Add(self.session_runtime_widg, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_top_sizer.Add(self.trial_runtime_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top_sizer.Add(self.trial_runtime_widg,flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_top_sizer.Add(self.rewarded_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top_sizer.Add(self.rewarded_widg,flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_top_sizer.Add(self.bias_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top_sizer.Add(self.bias_widg,flag=wx.EXPAND|wx.ALL, proportion=1)
+        self.panel_top_sizer.Add(self.trial_type_lab, flag=wx.ALIGN_RIGHT, proportion=1)
+        self.panel_top_sizer.Add(self.trial_type_widg,flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_top.SetSizerAndFit(self.panel_top_sizer)
         
-        # 2nd from top panel
-        self.panel_top2 = wx.Panel(self)
-        self.panel_top2_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.cal_lab = wx.StaticText(self.panel_top2, label='Flush spouts: ', style=wx.ALIGN_RIGHT)
-        self.cal_but = wx.Button(self.panel_top2, label='Flush (1s)')
-        self.locklev_lab = wx.StaticText(self.panel_top2, label='Lock level: ', style=wx.ALIGN_RIGHT)
-        self.locklev_but = wx.Button(self.panel_top2, label='Lock')
-        self.lev_lab = wx.StaticText(self.panel_top2, label='Change level: ', style=wx.ALIGN_RIGHT)
-        self.levu_but = wx.Button(self.panel_top2, label='UP')
-        self.levd_but = wx.Button(self.panel_top2, label='DOWN')
-        self.reward_lab = wx.StaticText(self.panel_top2, label='Give reward: ', style=wx.ALIGN_RIGHT)
-        self.rewardl_but = wx.Button(self.panel_top2, label='L')
-        self.rewardr_but = wx.Button(self.panel_top2, label='R')
-        self.puff_lab = wx.StaticText(self.panel_top2, label='Give puff: ', style=wx.ALIGN_RIGHT)
-        self.puffl_but = wx.Button(self.panel_top2, label='L')
-        self.puffr_but = wx.Button(self.panel_top2, label='R')
-        self.panel_top2_sizer.Add(self.cal_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top2_sizer.Add(self.cal_but, proportion=1)
-        self.panel_top2_sizer.Add(self.locklev_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top2_sizer.Add(self.locklev_but, proportion=1)
-        self.panel_top2_sizer.Add(self.lev_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top2_sizer.Add(self.levu_but, proportion=1)
-        self.panel_top2_sizer.Add(self.levd_but, proportion=1)
-        self.panel_top2_sizer.Add(self.reward_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top2_sizer.Add(self.rewardr_but, proportion=1)
-        self.panel_top2_sizer.Add(self.rewardl_but, proportion=1)
-        self.panel_top2_sizer.Add(self.puff_lab, flag=wx.ALIGN_RIGHT, proportion=1)
-        self.panel_top2_sizer.Add(self.puffr_but, proportion=1)
-        self.panel_top2_sizer.Add(self.puffl_but, proportion=1)
-        self.panel_top2.SetSizerAndFit(self.panel_top2_sizer)
-
         # bottom panel
         self.panel_bottom = wx.Panel(self,2)
         self.panel_bottom_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -109,40 +57,13 @@ class View(wx.Frame):
         self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom.SetSizerAndFit(self.panel_bottom_sizer)
 
-        # performance plot panel
+        # outcome plot panel
         self.panel_performance = wx.Panel(self,3)
         self.panel_performance_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.fig = Figure( figsize=(7.5, 4), dpi=80 )
         self.ax0 = self.fig.add_subplot(111)
-        self.perfl,self.perfr,self.perfv,self.perfv_l,self.perfv_r,self.perf_data,self.w_perf_data,self.w_perfl,self.w_perfr,self.w_perfv,self.w_perfvl,self.w_perfvr = self.ax0.plot(np.zeros([self.n_perf_show,12])-1, color='gray')
-        self.perfl.set_color('blue')
-        self.perfr.set_color('green')
-        self.w_perfl.set_color('blue')
-        self.w_perfr.set_color('green')
-        self.w_perfl.set_linewidth(3)
-        self.w_perfr.set_linewidth(3)
-        self.w_perf_data.set_linewidth(3)
-        self.perfv.set_color('black')
-        self.perfv.set_linestyle('dotted')
-        self.perfv_l.set_color('blue')
-        self.perfv_l.set_linestyle('dotted')
-        self.perfv_r.set_color('green')
-        self.perfv_r.set_linestyle('dotted')
-        self.w_perfv.set_color('black')
-        self.w_perfv.set_linestyle('dotted')
-        self.w_perfv.set_linewidth(4)
-        self.w_perfvl.set_color('blue')
-        self.w_perfvl.set_linestyle('dotted')
-        self.w_perfvl.set_linewidth(4)
-        self.w_perfvr.set_color('green')
-        self.w_perfvr.set_linestyle('dotted')
-        self.w_perfvr.set_linewidth(4)
-        self.perfl.set_alpha(0.4)
-        self.perfr.set_alpha(0.4)
-        self.perfv.set_alpha(0.4)
-        self.w_perfl.set_alpha(0.4)
-        self.w_perfr.set_alpha(0.4)
-        self.w_perfv.set_alpha(0.4)
+        self.perf, = self.ax0.plot(np.zeros(self.n_perf_show)-1, color='gray')
+        self.perf.set_color('black')
         self.perf_marks = [self.ax0.plot(m, -1)[0] for m in xrange(self.n_perf_show)]
         self.ax0.set_ylim([-0.02,1.08])
         self.ax0.set_xlim([-0.2,self.n_perf_show-0.8])
@@ -150,39 +71,19 @@ class View(wx.Frame):
         self.panel_performance_sizer.Add(self.canvas, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_performance.SetSizerAndFit(self.panel_performance_sizer)
         
-        # lick meter panel
-        self.panel_lick = wx.Panel(self,4)
-        self.panel_lick_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.fig_lick = Figure( figsize=(7.5, 4), dpi=80 )
-        self.ax_lick = self.fig_lick.add_subplot(111)
-        self.canvas_lick = FigureCanvasWxAgg(self.panel_lick, -1, self.fig_lick)
-        self.panel_lick_sizer.Add(self.canvas_lick, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_lick.SetSizerAndFit(self.panel_lick_sizer)
+        # eye meter panel
+        self.panel_eye = wx.Panel(self,4)
+        self.panel_eye_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.fig_eye = Figure( figsize=(7.5, 4), dpi=80 )
+        self.ax_eye = self.fig_eye.add_subplot(111)
+        self.canvas_eye = FigureCanvasWxAgg(self.panel_eye, -1, self.fig_eye)
+        self.panel_eye_sizer.Add(self.canvas_eye, flag=wx.EXPAND|wx.ALL, proportion=1)
+        self.panel_eye.SetSizerAndFit(self.panel_eye_sizer)
         
-        # movie panel
-        self.panel_mov = MoviePanel(self)
+        # movie panels
+        self.panel_mov1 = MoviePanel(self)
+        self.panel_mov2 = MoviePanel(self)
         
-        # trial display panel
-        self.panel_trial = wx.Panel(self,5)
-        self.panel_trial_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.fig_trial = Figure( figsize=(6.5, 3), dpi=80 )
-        self.ax_trial = self.fig_trial.add_subplot(111)
-        self.canvas_trial = FigureCanvasWxAgg(self.panel_trial, -1, self.fig_trial)
-        self.panel_trial_sizer.Add(self.canvas_trial, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_trial.SetSizerAndFit(self.panel_trial_sizer)
-
-        # live stream textbox
-        self.std_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.stdout_box = wx.TextCtrl(self, wx.ID_ANY, style=wx.TE_MULTILINE|wx.TE_READONLY|wx.HSCROLL|wx.VSCROLL, size=(-1,100))
-        self.stderr_box = wx.TextCtrl(self, wx.ID_ANY, style=wx.TE_MULTILINE|wx.TE_READONLY|wx.HSCROLL|wx.VSCROLL, size=(-1,100))
-        self.usrinput_box = wx.TextCtrl(self, wx.ID_ANY, style=wx.TE_PROCESS_ENTER|wx.HSCROLL|wx.VSCROLL, size=(-1,100), value='(notes)')
-        self.redir_out=RedirectText(self.stdout_box)
-        self.redir_err=RedirectText(self.stderr_box)
-        self.stderr_box.SetForegroundColour(wx.RED)
-        self.std_sizer.Add(self.stdout_box, wx.ID_ANY, wx.ALL|wx.EXPAND)
-        self.std_sizer.Add(self.stderr_box, wx.ID_ANY, wx.ALL|wx.EXPAND)
-        self.std_sizer.Add(self.usrinput_box, wx.ID_ANY, wx.ALL|wx.EXPAND)
-
         # main view sizers
         self.sizer_global = wx.BoxSizer(wx.VERTICAL)
         self.sizer_main = wx.BoxSizer(wx.HORIZONTAL)
@@ -192,9 +93,9 @@ class View(wx.Frame):
         self.sizer_r = wx.BoxSizer(wx.VERTICAL)
 
         self.sizer_l.Add(self.panel_performance, flag=wx.EXPAND, proportion=1)
-        self.sizer_l.Add(self.panel_lick, flag=wx.EXPAND, proportion=1)
-        self.sizer_r.Add(self.panel_mov, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
-        self.sizer_r.Add(self.panel_trial, flag=wx.EXPAND, proportion=1)
+        self.sizer_l.Add(self.panel_eye, flag=wx.EXPAND, proportion=1)
+        self.sizer_r.Add(self.panel_mov1, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
+        self.sizer_r.Add(self.panel_mov2, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
 
         self.sizer_h.Add(self.sizer_l, flag=wx.EXPAND, proportion=1)
         self.sizer_h.Add(self.sizer_r, flag=wx.EXPAND, proportion=1)
@@ -231,8 +132,6 @@ class View(wx.Frame):
         self.ax_lick.clear()
         self.lick_data1,self.lick_data2 = self.ax_lick.plot(np.zeros((self.n_lick_show,2)), alpha=0.5)
         self.ax_lick.set_ylim([-.9,10.1])
-    def set_bias(self, b):
-        self.bias_widg.SetValue('{:0.2f} : {:0.2f}'.format(*b[::-1]))
     def set_history(self, th):
         history,winhist = th.history_glob,th.history_win
         
@@ -298,30 +197,6 @@ class View(wx.Frame):
         self.lick_data1.set_ydata(data[0][-self.n_lick_show:])
         self.lick_data2.set_ydata(data[1][-self.n_lick_show:])
         self.fig_lick.canvas.draw()
-    def set_trial_data(self, th, sesh):
-        times = th.trt['time']
-        sides = th.trt['side']
-        times_l,times_r = times[sides==0],times[sides==1]
-        corside = th.trial.side
-
-        self.ax_trial.cla()
-        corcols = {0:'blue',1:'green'}
-
-        self.ax_trial.plot(np.zeros(times_r.shape), times_r, marker='o', markeredgecolor='none', markerfacecolor='green', linestyle='None')
-        self.ax_trial.plot(np.ones(times_l.shape), times_l, marker='o', markeredgecolor='none', markerfacecolor='blue', linestyle='None')
-        
-        self.ax_trial.hlines(0, -1., 2.,colors='k',linestyles='dashed')
-        self.ax_trial.hlines(th.stim_phase_pad[0], -1., 2.,colors='k',linestyles='dashed')
-        self.ax_trial.hlines(th.stim_phase_pad[0]+th.trial.dur, -1., 2.,colors=corcols[corside],linestyles='dashed')
-        self.ax_trial.hlines(sum(th.stim_phase_pad)+th.trial.dur, -1., 2.,colors='gray',linestyles='dashed')
-        self.ax_trial.hlines(sum(th.stim_phase_pad)+th.trial.dur+th.trial.delay, -1., 2.,colors='k',linestyles='dashed')
-        
-        ylim = th.phase_dur+th.trial.delay+0.4
-        
-        self.ax_trial.set_ylim([-0.2,ylim])
-        self.ax_trial.set_xlim([-1.,2.])
-        self.ax_trial.set_xticks([],[])
-        self.fig_trial.canvas.draw()
 
 class MoviePanel(wx.Panel):
     def __init__(self, parent, size=(320,240)):
