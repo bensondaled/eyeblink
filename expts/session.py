@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import time, threading, os, logging, csv, json, multiprocessing
-from hardware import AnalogReader, Valve, Light, PSEye, Speaker, default_cam_params, LED
+from hardware import AnalogReader, Valve, PSEye, default_cam_params
 from trials import TrialHandler
 from saver import Saver
 from util import now
@@ -21,17 +21,13 @@ class Session(object):
         self.__dict__.update(self.params)
         self.verify_params()
 
-        # saver
-        self.saver = Saver(self.subj, self.name, self)
-
         # hardware
-        self.init_cameras() # COPY FROM CURRENT PUFFS
-        self.ar = AnalogReader(saver_obj_buffer=self.saver.buf, **self.ar_params)
-        self.stimulator = Valve(saver=self.saver, name='stimulator', **self.stimulator_params)
-        self.light = Light(saver=self.saver, **self.light_params)
+        self.cam = PSEye(**self.cam_params)
+        self.cs_puffer = Valve(**self.stimulator_params)
+        self.us_puffer = Valve(**self.stimulator_params)
 
         # trials
-        self.th = TrialHandler(saver=self.saver, **self.trial_params)
+        self.th = TrialHandler(**self.trial_params)
 
         # runtime variables
         self.notes = {}
