@@ -3,7 +3,8 @@ from ctypes import Structure, byref
 import cv2, os, time, json, sys, warnings, ctypes, logging, threading, h5py, Queue
 import numpy as np
 import multiprocessing as mp
-from util import now,now2
+now = time.clock
+now2 = time.time
 ############ Constants ##############
 
 # camera sensor parameters
@@ -85,6 +86,7 @@ class MovieSaver(mp.Process):
         _saving_buf = np.empty((self.buffer_size,self.y,self.x), dtype=np.uint8)
         _saving_ts_buf = np.empty((self.buffer_size,2), dtype=np.float64)
         while True:
+            #print self.frame_buffer.qsize()
             # extend dataset if needed:
             if self.vw.shape[0]-_sav_idx <= self.buffer_size:
                 #print 'extending file'
@@ -139,7 +141,7 @@ class PSEye():
         self.frame_shape = [self.y,self.x]
         self.saver = MovieSaver(name=kwargs.pop('save_name')+'.h5', x=self.x, y=self.y, kill_flag=self.kill_flag, q=self.frame_buffer, flushing=self.flushing)
         self.pseye = _PSEye(*args, frame_buffer=self.frame_buffer, kill_flag=self.kill_flag, saving_flag=self.saving, **kwargs)
-        time.sleep(3)
+        time.sleep(2)
         self.last_query = now()            
     def get(self):
         if now()-self.last_query < 1./self.query_rate:
