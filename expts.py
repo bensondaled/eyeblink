@@ -2,7 +2,8 @@ import numpy as np
 import pylab as pl
 pl.ion()
 import time, os
-import cv2
+import cv2, json
+import multiprocessing as mp
 from cameras import PSEye as Camera
 from cameras import default_cam_params
 now = time.clock
@@ -11,7 +12,7 @@ from ni845x import NI845x
 class Experiment():
     EYE, WHEEL = 0,1
     CS,US,CSUS = 0,1,2
-    LINE_SI, LINE_CS, LINE_US = 0,1,2
+    LINE_SI_ON, LINE_SI_OFF, LINE_CS, LINE_US = 3,4,0,1
     def __init__(self, name, animal, save_path=r'C:\Users\deverett\Desktop\dummydata'):
 
         self.name = name
@@ -21,22 +22,26 @@ class Experiment():
         self.data_filename = self.path + '_data.csv'
         
         # hardware
-        
-        # TODO!!! Include sync value for cameras
+        sync_flag = mp.Value('b', False)
         cp1 = default_cam_params.copy()
-        cp1.update(idx=1,frame_rate=60,query_rate=5,save_name=self.path+'_cam1')
+        cp1.update(idx=1,frame_rate=60,query_rate=5,save_name=self.path+'_cam1', sync_flag=sync_flag)
         cp2 = default_cam_params.copy()
-        cp2.update(idx=0,frame_rate=60,query_rate=5,save_name=self.path+'_cam2')
+        cp2.update(idx=0,frame_rate=60,query_rate=5,save_name=self.path+'_cam2', sync_flag=sync_flag)
         self.cam1 = Camera(**cp1)
+        time.sleep(1)
         self.cam2 = Camera(**cp2)
-        self.cam1.set_save(True)
-        self.cam2.set_save(True)
-        self.set_flush(True)
+        self.cam1.set_save(False)
+        self.cam2.set_save(False)
+        self.set_flush(False)
         self.ni = NI845x()
+        
+        time.sleep(4.0)
+        sync_flag.value = True
+        self.sync_val = now()
 
         # trial params
         self.trial_duration = 6.0
-        self.cs_dur = 0.100
+        self.cs_dur = 1.0
         self.us_dur = 0.100
         self.csus_gap = 0.100
         self.intro = 1.0
@@ -46,12 +51,13 @@ class Experiment():
         self.plot_n = 100.
         self.window_motion = 50.
         self.window_eye = 50.
-        self.thresh_wheel = 2.0
-        self.thresh_eye = 2.0
+        self.thresh_wheel = 2
+        self.thresh_eye = 2
 
     def run(self):
 
         self.data_file = open(self.data_filename, 'a')
+        self.data_file.write('main={:0.15f},cam1={:0.15f},cam2={:0.15f}\n'.format(self.sync_val, self.cam1.pseye.sync_val.value, self.cam2.pseye.sync_val.value))
 
         self.acquire_masks()
         self.setup_panels()
@@ -60,9 +66,8 @@ class Experiment():
         saving = False
         self.last_start = now()
         self.last_end = now()
-        self.last_type = now()
-        self.last_sitrig = now()
         self.data_eye = np.zeros(self.plot_n)-1
+        self.data_rawwheel = np.zeros(self.plot_n)-1
         self.data_wheel = np.zeros(self.plot_n)-1
         q = 0
         
@@ -91,15 +96,17 @@ class Experiment():
     def set_flush(self,val):
         self.cam1.flushing.value = val
         self.cam2.flushing.value = val
+    def set_save(self,val):
+        self.cam1.set_save(val)
+        self.cam2.set_save(val)
     def determine_motion(self):
-        if -1 in self.data_wheel:
-            return True
-        return np.std(self.data_wheel[-self.window_motion:]) > self.thresh_motion
+        return self.data_wheel[-1] > self.thresh_wheel
     def determine_eyelid(self):
         return np.mean(self.data_eye[-self.window_eye:]) > self.thresh_eye
     def deliver_trial(self, stim):
-        self.ni.write_dio(self.LINE_SI)
-        self.cam.set_save(True)
+        self.ni.write_dio(self.LINE_SI_ON, 1)
+        self.ni.write_dio(self.LINE_SI_ON, 0)
+        self.set_save(True)
         self.t0 = now()
         while now()-self.t0 < self.intro:
             pass
@@ -113,41 +120,49 @@ class Experiment():
             
         while now()-self.t0 < self.trial_duration:
             pass
-        self.cam.set_save(False)
+        self.set_save(False)
         self.t0 = None
+        self.ni.write_dio(self.LINE_SI_OFF, 1)
+        self.ni.write_dio(self.LINE_SI_OFF, 0)
         return stim_time
     def send_cs(self):
+        self.ni.write_i2c('CS_ON')
         self.ni.write_dio(self.LINE_CS, 1)
         t0 = now()
         while now()-t0 < self.cs_dur:
             pass
+        self.ni.write_i2c('CS_OFF')
         self.ni.write_dio(self.LINE_CS, 0)
         return t0
     def send_us(self):
+        self.ni.write_i2c('US_ON')
         self.ni.write_dio(self.LINE_US, 1)
         t0 = now()
         while now()-t0 < self.us_dur:
             pass
+        self.ni.write_i2c('US_OFF')
         self.ni.write_dio(self.LINE_US, 0)
         return t0
     def send_csus(self):
+        self.ni.write_i2c('CS_ON')
         self.ni.write_dio(self.LINE_CS, 1)
         t0 = now()
         while now()-t0 < self.csus_gap:
             pass
+        self.ni.write_i2c('US_ON')
         self.ni.write_dio(self.LINE_US, 1)
         t1 = now()
         while now()-t0 < self.cs_dur:
             pass
+        self.ni.write_i2c('CS_OFF')
         self.ni.write_dio(self.LINE_CS, 0)
         while now()-t1 < self.us_dur: ## NOTE! This assumes CS finishes before US. if not, change this
             pass
+        self.ni.write_i2c('US_OFF')
         self.ni.write_dio(self.LINE_US, 0)
         return [t0,t1]
-    def save_trial(self):
-        pass
-        # this func will save all details about a trial (start time, end time, stim type, scanimage trigger time,)
-        #self.data_file.write('{:0.15f},{:0.15f},{},{:0.15f}'.format(self.last_start, self.last_end, self.last_type, self.last_sitrig))
+    def save_trial(self, dic):
+        self.data_file.write('{}\n'.format(json.dumps(dic)))
     def update(self):
         # this func will only be run when trials are not on. will update displays and params, etc
         fr1 = self.cam1.get()
@@ -157,9 +172,11 @@ class Experiment():
             cv2.imshow('Camera1', fr1)
             roi_data = self.extract(fr1)
             self.data_eye = np.roll(self.data_eye, -1)
+            self.data_rawwheel = np.roll(self.data_rawwheel, -1)
             self.data_wheel = np.roll(self.data_wheel, -1)
             self.data_eye[-1] = roi_data[self.EYE]
-            self.data_wheel[-1] = roi_data[self.WHEEL]
+            self.data_rawwheel[-1] = roi_data[self.WHEEL]
+            self.data_wheel[-1] = np.std(self.data_rawwheel[-self.window_motion:])
             self.plot_line_eye.set_ydata(self.data_eye)
             self.plot_line_wheel.set_ydata(self.data_wheel)
             self.fig.canvas.draw()
@@ -204,10 +221,17 @@ class Experiment():
         self.plot_line_wheel, = self.ax.plot(np.zeros(self.plot_n), color='g')
         self.line_eyethresh, = self.ax.plot([0, self.plot_n], [10,10], 'b--')
         self.line_wheelthresh, = self.ax.plot([0, self.plot_n], [10,10], 'g--')
-        self.ax.set_ylim([0,255])
+        self.ax.set_ylim([-1,256])
         
         self.win1 = cv2.namedWindow('Camera1')
         self.win2 = cv2.namedWindow('Camera2')
+        self.win_ctrl = cv2.namedWindow('Controls')
+        cv2.createTrackbar('thresh_eye', 'Controls', self.thresh_eye, 255, self._cb_eye)
+        cv2.createTrackbar('thresh_wheel', 'Controls', self.thresh_wheel, 255, self._cb_wheel)
+    def _cb_eye(self, pos):
+        self.thresh_eye = pos
+    def _cb_wheel(self, pos):
+        self.thresh_wheel = pos
     def end(self):
         self.cam1.end()
         self.cam2.end()

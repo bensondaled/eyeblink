@@ -78,8 +78,8 @@ class MovieSaver(mp.Process):
         self.start()
     def run(self):
         self.vw_f = h5py.File(self.name,'w')
-        self.vw = self.vw_f.create_dataset('mov', (self.hdf_resize, self.y, self.x), maxshape=(None, self.y, self.x), dtype='uint8')
-        self.vwts = self.vw_f.create_dataset('ts', (self.hdf_resize,2), maxshape=(None,2), dtype=np.float64)
+        self.vw = self.vw_f.create_dataset('mov', (self.hdf_resize, self.y, self.x), maxshape=(None, self.y, self.x), dtype='uint8', compression='gzip', compression_opts=7)
+        self.vwts = self.vw_f.create_dataset('ts', (self.hdf_resize,2), maxshape=(None,2), dtype=np.float64, compression='gzip', compression_opts=7)
             
         _sav_idx = 0
         _buf_idx = 0
@@ -98,7 +98,7 @@ class MovieSaver(mp.Process):
                 #print 'breaking1'
                 break
             try:
-                ts,temp = self.frame_buffer.get(block=False)
+                ts,temp,saveb = self.frame_buffer.get(block=False)
             except Queue.Empty:
                 if self.kill_flag.value:
                     #print 'breaking2'
@@ -110,17 +110,18 @@ class MovieSaver(mp.Process):
                 self.query_queue[:] = temp
                 self.query_flag.value = False
             
-            _saving_buf[_buf_idx] = temp.reshape([self.y, self.x])
-            _saving_ts_buf[_buf_idx] = ts
-            _buf_idx += 1
-            if (self.flushing.value and _buf_idx>=self.min_flush) or _buf_idx == self.buffer_size:
-                if _buf_idx == self.buffer_size:
-                    logging.warning('Dumping camera b/c reached max buffer')
-                #print 'dumping to file'
-                self.vw[_sav_idx:_sav_idx+_buf_idx,:,:] = _saving_buf[:_buf_idx]
-                self.vwts[_sav_idx:_sav_idx+_buf_idx,:] = _saving_ts_buf[:_buf_idx]
-                _sav_idx += _buf_idx
-                _buf_idx = 0
+            if saveb:
+                _saving_buf[_buf_idx] = temp.reshape([self.y, self.x])
+                _saving_ts_buf[_buf_idx] = ts
+                _buf_idx += 1
+                if (self.flushing.value and _buf_idx>=self.min_flush) or _buf_idx == self.buffer_size:
+                    if _buf_idx == self.buffer_size:
+                        logging.warning('Dumping camera b/c reached max buffer')
+                    #print 'dumping to file'
+                    self.vw[_sav_idx:_sav_idx+_buf_idx,:,:] = _saving_buf[:_buf_idx]
+                    self.vwts[_sav_idx:_sav_idx+_buf_idx,:] = _saving_ts_buf[:_buf_idx]
+                    _sav_idx += _buf_idx
+                    _buf_idx = 0
         self.vw[_sav_idx:_sav_idx+_buf_idx,:,:] = _saving_buf[:_buf_idx]
         self.vwts[_sav_idx:_sav_idx+_buf_idx] = _saving_ts_buf[:_buf_idx]
         _sav_idx += _buf_idx
@@ -141,7 +142,8 @@ class PSEye():
         self.frame_shape = [self.y,self.x]
         self.saver = MovieSaver(name=kwargs.pop('save_name')+'.h5', x=self.x, y=self.y, kill_flag=self.kill_flag, q=self.frame_buffer, flushing=self.flushing)
         self.pseye = _PSEye(*args, frame_buffer=self.frame_buffer, kill_flag=self.kill_flag, saving_flag=self.saving, **kwargs)
-        time.sleep(2)
+        #self.sleep = 2
+        #time.sleep(self.sleep)
         self.last_query = now()            
     def get(self):
         if now()-self.last_query < 1./self.query_rate:
@@ -255,11 +257,11 @@ class _PSEye(mp.Process):
             self.dll.CLEyeSetCameraParameter(self._cam, param, value)
 
     def run(self):
+        self._init_cam()
+        
         # Sync with parent process, if applicable
         while (not self.sync_flag is None) and (not self.sync_flag.value):
             self.sync_val.value = now()
-
-        self._init_cam()
        
         # Main loop
         while True:
@@ -270,8 +272,7 @@ class _PSEye(mp.Process):
 
             if got:
                 fr = np.frombuffer(self._buf, dtype=np.uint8)
-                if self.saving_flag.value:
-                    self.frame_buffer.put([[ts,ts2],fr])
+                self.frame_buffer.put([[ts,ts2],fr, self.saving_flag.value])
                     
         try:
             self.dll.CLEyeCameraStop(self._cam)
@@ -291,7 +292,7 @@ class _PSEye(mp.Process):
     
         self._cam = self.dll.CLEyeCreateCamera(self.dll.CLEyeGetCameraUUID(self.idx), self.color_mode, self.resolution_mode, self.frame_rate)
         if not self._cam:
-            warnings.warn('Camera failed to initialize.')
+            warnings.warn('Camera {} failed to initialize.'.format(self.idx))
             return
             
         self.x, self.y = CLEyeCameraGetFrameDimensions(self.dll, self._cam)
