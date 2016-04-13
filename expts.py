@@ -6,9 +6,12 @@ import cv2
 from cameras import PSEye as Camera
 from cameras import default_cam_params
 now = time.clock
+from ni845x import NI845x
 
 class Experiment():
     EYE, WHEEL = 0,1
+    CS,US,CSUS = 0,1,2
+    LINE_SI, LINE_CS, LINE_US = 0,1,2
     def __init__(self, name, animal, save_path=r'C:\Users\deverett\Desktop\dummydata'):
 
         self.name = name
@@ -18,6 +21,8 @@ class Experiment():
         self.data_filename = self.path + '_data.csv'
         
         # hardware
+        
+        # TODO!!! Include sync value for cameras
         cp1 = default_cam_params.copy()
         cp1.update(idx=1,frame_rate=60,query_rate=5,save_name=self.path+'_cam1')
         cp2 = default_cam_params.copy()
@@ -27,13 +32,21 @@ class Experiment():
         self.cam1.set_save(True)
         self.cam2.set_save(True)
         self.set_flush(True)
+        self.ni = NI845x()
 
+        # trial params
+        self.trial_duration = 6.0
+        self.cs_dur = 0.100
+        self.us_dur = 0.100
+        self.csus_gap = 0.100
+        self.intro = 1.0
+        
         # params
         self.min_iti = 10.
         self.plot_n = 100.
         self.window_motion = 50.
         self.window_eye = 50.
-        self.thresh_motion = 2.0
+        self.thresh_wheel = 2.0
         self.thresh_eye = 2.0
 
     def run(self):
@@ -63,9 +76,10 @@ class Experiment():
             if (dt>self.min_iti) and (not moving) and (eyelid):
                 self.set_flush(False)
                 self.last_start = now()
-                self.deliver_trial(None)
+                kind = np.random.choice([self.CS, self.US, self.CSUS])
+                stim_time = self.deliver_trial(kind)
                 self.last_end = now()
-                self.save_trial()
+                self.save_trial(dict(start=self.last_start, end=self.last_end, stim=stim_time, kind=kind))
                 self.set_flush(True)
 
             self.update()
@@ -84,16 +98,52 @@ class Experiment():
     def determine_eyelid(self):
         return np.mean(self.data_eye[-self.window_eye:]) > self.thresh_eye
     def deliver_trial(self, stim):
-        pass
-        print ('trial delivered')
-        # this func will be a blocking call that tells cam to save then delivers stimuli
-        # start cam saving
-        # wait for some duration
-        # trigger scanimage
-        # wait for some duration
-        # send stim 1
-        # (possibly) wait for some duration
-        # (possibly) send stim 2
+        self.ni.write_dio(self.LINE_SI)
+        self.cam.set_save(True)
+        self.t0 = now()
+        while now()-self.t0 < self.intro:
+            pass
+        
+        if stim == self.CS:
+            stim_time = self.send_cs()
+        elif stim==self.US:
+            stim_time = self.send_us()
+        elif stim==self.CSUS:
+            stim_time = self.send_csus()
+            
+        while now()-self.t0 < self.trial_duration:
+            pass
+        self.cam.set_save(False)
+        self.t0 = None
+        return stim_time
+    def send_cs(self):
+        self.ni.write_dio(self.LINE_CS, 1)
+        t0 = now()
+        while now()-t0 < self.cs_dur:
+            pass
+        self.ni.write_dio(self.LINE_CS, 0)
+        return t0
+    def send_us(self):
+        self.ni.write_dio(self.LINE_US, 1)
+        t0 = now()
+        while now()-t0 < self.us_dur:
+            pass
+        self.ni.write_dio(self.LINE_US, 0)
+        return t0
+    def send_csus(self):
+        self.ni.write_dio(self.LINE_CS, 1)
+        t0 = now()
+        while now()-t0 < self.csus_gap:
+            pass
+        self.ni.write_dio(self.LINE_US, 1)
+        t1 = now()
+        while now()-t0 < self.cs_dur:
+            pass
+        self.ni.write_dio(self.LINE_CS, 0)
+        while now()-t1 < self.us_dur: ## NOTE! This assumes CS finishes before US. if not, change this
+            pass
+        self.ni.write_dio(self.LINE_US, 0)
+        return [t0,t1]
     def save_trial(self):
         pass
         # this func will save all details about a trial (start time, end time, stim type, scanimage trigger time,)
@@ -115,6 +165,9 @@ class Experiment():
             self.fig.canvas.draw()
         if fr2 is not None:
             cv2.imshow('Camera2', fr2)
+            
+        self.line_eyethresh.set_ydata(self.thresh_eye)
+        self.line_wheelthresh.set_ydata(self.thresh_wheel)
         
     def extract(self, fr):
         flat = fr.reshape((1,-1)).T
@@ -147,8 +200,10 @@ class Experiment():
     def setup_panels(self):
         self.fig = pl.figure()
         self.ax = self.fig.add_subplot(111)
-        self.plot_line_eye, = self.ax.plot(np.zeros(self.plot_n))
-        self.plot_line_wheel, = self.ax.plot(np.zeros(self.plot_n))
+        self.plot_line_eye, = self.ax.plot(np.zeros(self.plot_n), color='b')
+        self.plot_line_wheel, = self.ax.plot(np.zeros(self.plot_n), color='g')
+        self.line_eyethresh, = self.ax.plot([0, self.plot_n], [10,10], 'b--')
+        self.line_wheelthresh, = self.ax.plot([0, self.plot_n], [10,10], 'g--')
         self.ax.set_ylim([0,255])
         
         self.win1 = cv2.namedWindow('Camera1')
@@ -156,6 +211,7 @@ class Experiment():
     def end(self):
         self.cam1.end()
         self.cam2.end()
+        self.ni.end()
         cv2.destroyAllWindows()
         pl.close('all')
         self.data_file.close()

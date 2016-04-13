@@ -1,6 +1,6 @@
 import time
 from expts import Experiment
-#from pymat import TCPIP
+from pymat import TCPIP
 
 ## Params
 si_data_path = r'D:\\deverett\\eyeblink'
@@ -14,7 +14,7 @@ def safe_input(prompt):
             valid = False
     return s
 
-#tcpip = TCPIP()
+tcpip = TCPIP()
 
 if __name__ == '__main__':
     cont = True
@@ -22,9 +22,9 @@ if __name__ == '__main__':
         animal = safe_input('Enter animal name: ')
         exp_name = time.strftime('%Y%m%d%H%M%S')
         si_dict = dict(path=si_data_path+r'\\{}'.format(animal), name=exp_name, count=1)
-        #tcpip.send(si_dict)
+        tcpip.send(si_dict)
         exp = Experiment(name=exp_name, animal=animal)
         exp.run()
         cont = raw_input('Continue? (q to quit)')
 
-    #tcpip.end()
+    tcpip.end()
