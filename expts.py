@@ -2,7 +2,7 @@ import numpy as np
 import pylab as pl
 pl.ion()
 import time, os
-import cv2, json
+import cv2, json, h5py
 import multiprocessing as mp
 from cameras import PSEye as Camera
 from cameras import default_cam_params
@@ -19,14 +19,14 @@ class Experiment():
         self.animal = animal
         self.base_path = save_path
         self.path = os.path.join(self.base_path, self.animal, self.name)
-        self.data_filename = self.path + '_data.csv'
+        self.data_filename = self.path + '_data.h5'
         
         # hardware
         sync_flag = mp.Value('b', False)
         cp1 = default_cam_params.copy()
-        cp1.update(idx=1,frame_rate=60,query_rate=5,save_name=self.path+'_cam1', sync_flag=sync_flag)
+        cp1.update(idx=1,frame_rate=60,query_rate=5,save_name=self.path+'_cam1', sync_flag=sync_flag, rotation=0)
         cp2 = default_cam_params.copy()
-        cp2.update(idx=0,frame_rate=60,query_rate=5,save_name=self.path+'_cam2', sync_flag=sync_flag)
+        cp2.update(idx=0,frame_rate=60,query_rate=5,save_name=self.path+'_cam2', sync_flag=sync_flag, rotation=0)
         self.cam1 = Camera(**cp1)
         time.sleep(1)
         self.cam2 = Camera(**cp2)
@@ -40,26 +40,31 @@ class Experiment():
         self.sync_val = now()
 
         # trial params
-        self.trial_duration = 6.0
-        self.cs_dur = 1.0
-        self.us_dur = 0.100
-        self.csus_gap = 0.100
-        self.intro = 1.0
+        self.trial_duration = 20.0
+        self.cs_dur = 0.500
+        self.us_dur = 0.030
+        self.csus_gap = 0.250
+        self.intro = 7.0
         
         # params
-        self.min_iti = 10.
+        self.min_iti = 1.0
         self.plot_n = 100.
-        self.window_motion = 50.
-        self.window_eye = 50.
+        self.window_motion = 5.
+        self.window_eye = 10.
         self.thresh_wheel = 2
         self.thresh_eye = 2
 
     def run(self):
 
-        self.data_file = open(self.data_filename, 'a')
-        self.data_file.write('main={:0.15f},cam1={:0.15f},cam2={:0.15f}\n'.format(self.sync_val, self.cam1.pseye.sync_val.value, self.cam2.pseye.sync_val.value))
-
-        self.acquire_masks()
+        self.data_file = h5py.File(self.data_filename)
+        self.dataset_sync = self.data_file.create_dataset('sync', data=[self.sync_val, self.cam1.pseye.sync_val.value, self.cam2.pseye.sync_val.value])
+        self.dataset_sync.attrs['keys'] = ['main','cam1','cam2']
+        self.dataset_trials = self.data_file.create_dataset('trials', [0,5], maxshape=[None,5], dtype=np.float64)
+        self.dataset_trials.attrs['trial_types'] = ['CS','US','CSUS']
+        self.dataset_trials.attrs['keys'] = ['start','end','cs','us','type']
+        
+        mask = self.acquire_masks()
+        self.dataset_roi = self.data_file.create_dataset('roi', data=mask)
         self.setup_panels()
         
         # runtime vars
@@ -79,12 +84,14 @@ class Experiment():
             eyelid = self.determine_eyelid()
 
             if (dt>self.min_iti) and (not moving) and (eyelid):
+                self.next_file()
                 self.set_flush(False)
                 self.last_start = now()
-                kind = np.random.choice([self.CS, self.US, self.CSUS])
-                stim_time = self.deliver_trial(kind)
+                kind = np.random.choice([self.CS, self.US, self.CSUS], p=[0.1, 0.1, 0.8])
+                cs_time,us_time = self.deliver_trial(kind)
                 self.last_end = now()
-                self.save_trial(dict(start=self.last_start, end=self.last_end, stim=stim_time, kind=kind))
+                self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
+                self.dataset_trials[-1,:] = np.array([self.last_start, self.last_end, cs_time, us_time, kind])
                 self.set_flush(True)
 
             self.update()
@@ -94,15 +101,18 @@ class Experiment():
         self.end()
 
     def set_flush(self,val):
-        self.cam1.flushing.value = val
-        self.cam2.flushing.value = val
+        self.cam1.set_flush(val)
+        self.cam2.set_flush(val)
+    def next_file(self):
+        self.cam1.next_file()
+        self.cam2.next_file()
     def set_save(self,val):
         self.cam1.set_save(val)
         self.cam2.set_save(val)
     def determine_motion(self):
         return self.data_wheel[-1] > self.thresh_wheel
     def determine_eyelid(self):
-        return np.mean(self.data_eye[-self.window_eye:]) > self.thresh_eye
+        return np.mean(self.data_eye[-self.window_eye:]) < self.thresh_eye
     def deliver_trial(self, stim):
         self.ni.write_dio(self.LINE_SI_ON, 1)
         self.ni.write_dio(self.LINE_SI_ON, 0)
@@ -113,8 +123,10 @@ class Experiment():
         
         if stim == self.CS:
             stim_time = self.send_cs()
+            stim_time = [stim_time,-1]
         elif stim==self.US:
             stim_time = self.send_us()
+            stim_time = [-1,stim_time]
         elif stim==self.CSUS:
             stim_time = self.send_csus()
             
@@ -152,14 +164,15 @@ class Experiment():
         self.ni.write_i2c('US_ON')
         self.ni.write_dio(self.LINE_US, 1)
         t1 = now()
+        while now()-t1 < self.us_dur: ## NOTE! This assumes US finishes before CS. if not, change this
+            pass
+        self.ni.write_i2c('US_OFF')
+        self.ni.write_dio(self.LINE_US, 0)
         while now()-t0 < self.cs_dur:
             pass
         self.ni.write_i2c('CS_OFF')
         self.ni.write_dio(self.LINE_CS, 0)
-        while now()-t1 < self.us_dur: ## NOTE! This assumes CS finishes before US. if not, change this
-            pass
-        self.ni.write_i2c('US_OFF')
-        self.ni.write_dio(self.LINE_US, 0)
+
         return [t0,t1]
     def save_trial(self, dic):
         self.data_file.write('{}\n'.format(json.dumps(dic)))
@@ -168,9 +181,11 @@ class Experiment():
         fr1 = self.cam1.get()
         fr2 = self.cam2.get()
         
-        if fr1 is not None:
-            cv2.imshow('Camera1', fr1)
-            roi_data = self.extract(fr1)
+        if fr2 is not None:
+            fr2x = cv2.cvtColor(fr2, cv2.COLOR_GRAY2RGBA)
+            fr2x[self.mask.sum(axis=0).astype(bool),0] += 10
+            cv2.imshow('Camera2', fr2x)
+            roi_data = self.extract(fr2)
             self.data_eye = np.roll(self.data_eye, -1)
             self.data_rawwheel = np.roll(self.data_rawwheel, -1)
             self.data_wheel = np.roll(self.data_wheel, -1)
@@ -180,8 +195,8 @@ class Experiment():
             self.plot_line_eye.set_ydata(self.data_eye)
             self.plot_line_wheel.set_ydata(self.data_wheel)
             self.fig.canvas.draw()
-        if fr2 is not None:
-            cv2.imshow('Camera2', fr2)
+        if fr1 is not None:
+            cv2.imshow('Camera1', fr1)
             
         self.line_eyethresh.set_ydata(self.thresh_eye)
         self.line_wheelthresh.set_ydata(self.thresh_wheel)
@@ -191,7 +206,7 @@ class Experiment():
         dp = (self.mask_flat.dot(flat)).T
         return np.squeeze(dp/self.mask_flat.sum(axis=-1))
     def acquire_masks(self):
-        im1 = self.cam1.get()
+        im1 = self.cam2.get()
         pl.imshow(im1, cmap='gray')
         pl.title('Select Eye')
         pts_eye = pl.ginput(n=0, timeout=0)
@@ -201,7 +216,7 @@ class Experiment():
 
         pl.clf()
         
-        im2 = self.cam1.get()
+        im2 = self.cam2.get()
         pl.imshow(im2, cmap='gray')
         pl.title('Select Wheel')
         pl.gcf().canvas.draw()
@@ -214,6 +229,7 @@ class Experiment():
 
         self.mask = np.array([mask_eye, mask_wheel])
         self.mask_flat = self.mask.reshape((2,-1))
+        return self.mask
     def setup_panels(self):
         self.fig = pl.figure()
         self.ax = self.fig.add_subplot(111)
@@ -225,7 +241,7 @@ class Experiment():
         
         self.win1 = cv2.namedWindow('Camera1')
         self.win2 = cv2.namedWindow('Camera2')
-        self.win_ctrl = cv2.namedWindow('Controls')
+        self.win_ctrl = cv2.namedWindow('Controls', cv2.WINDOW_NORMAL)
         cv2.createTrackbar('thresh_eye', 'Controls', self.thresh_eye, 255, self._cb_eye)
         cv2.createTrackbar('thresh_wheel', 'Controls', self.thresh_wheel, 255, self._cb_wheel)
     def _cb_eye(self, pos):
