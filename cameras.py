@@ -53,11 +53,11 @@ def CLEyeCameraGetFrameDimensions(dll, cam):
     dll.CLEyeCameraGetFrameDimensions(cam, byref(width), byref(height))
     return width.value, height.value
 
-def mp2np(a):
-    return np.frombuffer(a.get_obj(), dtype=np.uint8)
+def mp2np(a, dtype=np.uint8):
+    return np.frombuffer(a.get_obj(), dtype=dtype)
 
 class MovieSaver(mp.Process):
-    def __init__(self, name, x, y, kill_flag, q, flushing, next_file_flag, buffer_size=2000, hdf_resize=30000, min_flush=200, playback_buffer=2000):
+    def __init__(self, name, x, y, kill_flag, q, flushing, next_file_flag, buffer_size=2000, hdf_resize=30000, min_flush=200, store_buffer_n=1800):
         super(MovieSaver, self).__init__()
         self.daemon = True
         self.name = name
@@ -71,7 +71,14 @@ class MovieSaver(mp.Process):
         self.hdf_resize = hdf_resize
         self.min_flush = min_flush
         self.next_file_flag = next_file_flag
-        #self.playback_buffer = np.zeros([playback_buffer, self.y, self.x])
+        self.store_buffer_n = store_buffer_n
+        self.store_buffer = mp.Array(ctypes.c_uint8,self.store_buffer_n*self.y*self.x)
+        self.store_buffer_ts = mp.Array(ctypes.c_double, self.store_buffer_n)
+        self.store_idx = mp.Value('i',0)
+        self.still_storing = mp.Value('b', False)
+        self.file_idx = mp.Value('i',0)
+        self.get_last_trial_flag = mp.Value('b',False)
+        self.last_t_q = mp.Queue()
         
         # Queries
         self.query_flag = mp.Value('b',False)
@@ -80,13 +87,16 @@ class MovieSaver(mp.Process):
         self.start()
     def run(self):
         self.vw_f = h5py.File(self.name,'w')
+        self.next_file_flag.value = True
         file_idx = 0
-        self.next_file_flag.value = 1
-            
+        store_idx = 0
+        juststored = False
 
         _saving_buf = np.empty((self.buffer_size,self.y,self.x), dtype=np.uint8)
         _saving_ts_buf = np.empty((self.buffer_size,2), dtype=np.float64)
         while True:
+        
+
             
             if self.next_file_flag.value:
                 if file_idx >=1:
@@ -100,9 +110,10 @@ class MovieSaver(mp.Process):
                 _sav_idx = 0
                 _buf_idx = 0
                 file_idx += 1
+                self.file_idx.value = file_idx
                 self.vw_grp = self.vw_f.create_group('trial_{}'.format(file_idx))
-                self.vw = self.vw_grp.create_dataset('mov', (self.hdf_resize, self.y, self.x), maxshape=(None, self.y, self.x), dtype='uint8', compression='gzip', compression_opts=7)
-                self.vwts = self.vw_grp.create_dataset('ts', (self.hdf_resize,2), maxshape=(None,2), dtype=np.float64, compression='gzip', compression_opts=7)
+                self.vw = self.vw_grp.create_dataset('mov', (self.hdf_resize, self.y, self.x), maxshape=(None, self.y, self.x), dtype='uint8', compression='gzip', compression_opts=3)
+                self.vwts = self.vw_grp.create_dataset('ts', (self.hdf_resize,2), maxshape=(None,2), dtype=np.float64, compression='gzip', compression_opts=3)
                 self.next_file_flag.value = False
             
             #print self.frame_buffer.qsize()
@@ -117,7 +128,7 @@ class MovieSaver(mp.Process):
                 #print 'breaking1'
                 break
             try:
-                ts,temp,saveb = self.frame_buffer.get(block=False)
+                ts,temp,saveb,storeb = self.frame_buffer.get(block=False)
             except Queue.Empty:
                 if self.kill_flag.value:
                     #print 'breaking2'
@@ -141,6 +152,25 @@ class MovieSaver(mp.Process):
                 self.vwts[_sav_idx:_sav_idx+_buf_idx,:] = _saving_ts_buf[:_buf_idx]
                 _sav_idx += _buf_idx
                 _buf_idx = 0
+            
+            #if storeb:
+            #    if not juststored:
+            #        self.store_idx.value = 0
+            #        print ('first stored: {:0.15f}'.format(ts[1]))
+            #    juststored = True
+            #    self.still_storing.value = True
+            #    si = self.store_idx.value
+            #    self.store_buffer[si*self.x*self.y:(si+1)*self.x*self.y] = temp
+            #    self.store_buffer_ts[si] = ts[1]
+            #    self.store_idx.value += 1
+            #else:
+            #    juststored = False
+            #    self.still_storing.value = False
+            if self.get_last_trial_flag.value:
+                d = self.get_last_trial()
+                self.last_t_q.put(d)
+                self.get_last_trial_flag.value = False
+                
         self.vw[_sav_idx:_sav_idx+_buf_idx,:,:] = _saving_buf[:_buf_idx]
         self.vwts[_sav_idx:_sav_idx+_buf_idx] = _saving_ts_buf[:_buf_idx]
         _sav_idx += _buf_idx
@@ -149,6 +179,15 @@ class MovieSaver(mp.Process):
         self.vwts.resize([_sav_idx,2])
         self.vw_f.close()
         self.saving_complete.value = True
+    def get_last_trial(self):
+        print 'getting last = {}'.format(self.file_idx.value-1)
+        if self.file_idx.value <= 1:
+            return None,None
+        ds = self.vw_f['trial_{}'.format(self.file_idx.value-1)]
+        mov = ds['mov']
+        ts = ds['ts']
+        return np.asarray(mov).reshape([len(mov),self.y,self.x]),np.asarray(ts[:,1]),self.file_idx.value-1
+    
 
 class PSEye():
     def __init__(self, *args, **kwargs):
@@ -157,11 +196,12 @@ class PSEye():
         self.saving = mp.Value('b', False)
         self.flushing = mp.Value('b', False)
         self.next_file_flag = mp.Value('b', False)
+        self.store_flag = mp.Value('b', False)
         self.query_rate = kwargs.pop('query_rate')
         self.x,self.y = [_PSEye.DIMS_SMALL,_PSEye.DIMS_LARGE][[_PSEye.RES_SMALL,_PSEye.RES_LARGE].index(kwargs['resolution'])]
         self.frame_shape = [self.y,self.x]
         self.saver = MovieSaver(name=kwargs.pop('save_name')+'.h5', x=self.x, y=self.y, kill_flag=self.kill_flag, q=self.frame_buffer, flushing=self.flushing, next_file_flag=self.next_file_flag)
-        self.pseye = _PSEye(*args, frame_buffer=self.frame_buffer, kill_flag=self.kill_flag, saving_flag=self.saving, **kwargs)
+        self.pseye = _PSEye(*args, frame_buffer=self.frame_buffer, kill_flag=self.kill_flag, saving_flag=self.saving, store_flag=self.store_flag, **kwargs)
         #self.sleep = 2
         #time.sleep(self.sleep)
         self.last_query = now()            
@@ -176,6 +216,17 @@ class PSEye():
         return fr.reshape([self.y,self.x])
     def next_file(self):
         self.next_file_flag.value = True
+    def set_store(self, val):
+        self.store_flag.value = val
+    def get_store(self):
+        #while self.store_flag.value == True or self.saver.still_storing.value==True:
+        #    pass
+        self.saver.get_last_trial_flag.value = True
+        while self.saver.get_last_trial_flag.value == True:
+            pass
+        res = self.saver.last_t_q.get(block=True)
+        return res
+        #return mp2np(self.saver.store_buffer_ts, dtype=float)[:self.saver.store_idx.value],mp2np(self.saver.store_buffer).reshape([self.saver.store_buffer_n,self.saver.y,self.saver.x])[:self.saver.store_idx.value]
     def end(self):
         self.kill_flag.value = True
         while (not self.pseye.thread_complete.value) or (not self.saver.saving_complete.value):
@@ -195,7 +246,7 @@ class _PSEye(mp.Process):
     COLOR = CLEYE_COLOR
     GREYSCALE = CLEYE_GREYSCALE
 
-    def __init__(self, idx, resolution, frame_rate, color_mode, vflip=False, hflip=False, gain=60, exposure=24, wbal_red=50, wbal_blue=50, wbal_green=50, auto_gain=0, auto_exposure=0, auto_wbal=0, zoom=0, rotation=0, save_name=None, ts_buffer=1000, sync_flag=None, frame_buffer=None, kill_flag=None, saving_flag=None):
+    def __init__(self, idx, resolution, frame_rate, color_mode, vflip=False, hflip=False, gain=60, exposure=24, wbal_red=50, wbal_blue=50, wbal_green=50, auto_gain=0, auto_exposure=0, auto_wbal=0, zoom=0, rotation=0, save_name=None, ts_buffer=1000, sync_flag=None, frame_buffer=None, kill_flag=None, saving_flag=None, store_flag=None):
 
         # Process init
         super(_PSEye, self).__init__()
@@ -206,6 +257,7 @@ class _PSEye(mp.Process):
         # Parent
         self.kill_flag = kill_flag
         self.saving_flag = saving_flag
+        self.store_flag = store_flag
         
         # Parameters
         self.idx = idx
@@ -296,8 +348,8 @@ class _PSEye(mp.Process):
             got,ts,ts2 = self.get_frame()
 
             if got:
-                fr = np.frombuffer(self._buf, dtype=np.uint8)
-                self.frame_buffer.put([[ts,ts2],fr, self.saving_flag.value])
+                fr = np.frombuffer(self._buf, dtype=np.uint8).copy()
+                self.frame_buffer.put([[ts,ts2],fr, self.saving_flag.value,self.store_flag.value])
                     
         try:
             self.dll.CLEyeCameraStop(self._cam)

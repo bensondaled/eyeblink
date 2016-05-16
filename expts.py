@@ -2,12 +2,14 @@ import numpy as np
 import pylab as pl
 pl.ion()
 import time, os
-import cv2, json, h5py
+import cv2, json, h5py, threading
 import multiprocessing as mp
 from cameras import PSEye as Camera
 from cameras import default_cam_params
 now = time.clock
 from ni845x import NI845x
+
+STIM_ON = True
 
 class Experiment():
     EYE, WHEEL = 0,1
@@ -26,7 +28,7 @@ class Experiment():
         cp1 = default_cam_params.copy()
         cp1.update(idx=1,frame_rate=60,query_rate=5,save_name=self.path+'_cam1', sync_flag=sync_flag, rotation=0)
         cp2 = default_cam_params.copy()
-        cp2.update(idx=0,frame_rate=60,query_rate=5,save_name=self.path+'_cam2', sync_flag=sync_flag, rotation=0)
+        cp2.update(idx=0,frame_rate=60,query_rate=12,save_name=self.path+'_cam2', sync_flag=sync_flag, rotation=0)
         self.cam1 = Camera(**cp1)
         time.sleep(1)
         self.cam2 = Camera(**cp2)
@@ -47,9 +49,9 @@ class Experiment():
         self.intro = 7.0
         
         # params
-        self.min_iti = 1.0
+        self.min_iti = 8.0
         self.plot_n = 100.
-        self.window_motion = 5.
+        self.window_motion = 10.
         self.window_eye = 10.
         self.thresh_wheel = 2
         self.thresh_eye = 2
@@ -68,13 +70,19 @@ class Experiment():
         self.setup_panels()
         
         # runtime vars
+        self.on = True
+        self.done = False
         saving = False
+        self.trial_on = False
         self.last_start = now()
+        self.trial_flag = False
         self.last_end = now()
+        self.last_stim_time = None
         self.data_eye = np.zeros(self.plot_n)-1
         self.data_rawwheel = np.zeros(self.plot_n)-1
         self.data_wheel = np.zeros(self.plot_n)-1
         q = 0
+        threading.Thread(target=self.deliver_trial).start()
         
         # main loop
         while q!=ord('q'):
@@ -83,23 +91,38 @@ class Experiment():
             moving = self.determine_motion()
             eyelid = self.determine_eyelid()
 
-            if (dt>self.min_iti) and (not moving) and (eyelid):
-                self.next_file()
-                self.set_flush(False)
-                self.last_start = now()
-                kind = np.random.choice([self.CS, self.US, self.CSUS], p=[0.1, 0.1, 0.8])
-                cs_time,us_time = self.deliver_trial(kind)
-                self.last_end = now()
-                self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
-                self.dataset_trials[-1,:] = np.array([self.last_start, self.last_end, cs_time, us_time, kind])
-                self.set_flush(True)
-
+            if (not self.trial_on) and (dt>self.min_iti) and (not moving) and (eyelid):
+                self.trial_flag = True
+                
             self.update()
-
             q = cv2.waitKey(1)
 
+        self.on = False
         self.end()
 
+    def play_store(self):
+        s = None
+        while s is None:
+            s,t,tidx = self.cam2.get_store()
+        #print s.shape
+        #print t
+        traces = np.array([self.extract(f) for f in s])
+        self.ax2.clear()
+        self.ax2.plot(t,traces[:,0])
+        self.ax2.vlines(self.cstime_glob, 0, 255, linestyles='dashed')
+        self.ax2.vlines(self.ustime_glob, 0, 255, linestyles='dashed')
+        self.ax2.set_title('trial {} : {}'.format(tidx,['CS','US','CSUS'][self.last_kind]))
+        self.ax2.set_xlim([self.cstime_glob-1.0, self.ustime_glob+2.0])
+        self.ax2.set_ylim([traces[:,0].min(),traces[:,0].max()])
+        #self.ax2.axis('tight')
+        self.fig.canvas.draw()
+        for fr in s[::3]:
+            cv2.imshow('Last trial', fr)
+            cv2.waitKey(1)
+        cv2.imshow('Last trial', np.zeros(fr.shape))
+        self.trial_on = False
+    def set_store(self, val):
+        self.cam2.set_store(val)
     def set_flush(self,val):
         self.cam1.set_flush(val)
         self.cam2.set_flush(val)
@@ -113,93 +136,132 @@ class Experiment():
         return self.data_wheel[-1] > self.thresh_wheel
     def determine_eyelid(self):
         return np.mean(self.data_eye[-self.window_eye:]) < self.thresh_eye
-    def deliver_trial(self, stim):
-        self.ni.write_dio(self.LINE_SI_ON, 1)
-        self.ni.write_dio(self.LINE_SI_ON, 0)
-        self.set_save(True)
-        self.t0 = now()
-        while now()-self.t0 < self.intro:
-            pass
-        
-        if stim == self.CS:
-            stim_time = self.send_cs()
-            stim_time = [stim_time,-1]
-        elif stim==self.US:
-            stim_time = self.send_us()
-            stim_time = [-1,stim_time]
-        elif stim==self.CSUS:
-            stim_time = self.send_csus()
+    def deliver_trial(self):
+        while self.on:
+            if self.trial_flag:
+                self.trial_flag = False
+                self.trial_on = True
+                #self.set_flush(False)
+                self.last_start = now()
+                kind = np.random.choice([self.CS, self.US, self.CSUS], p=[0.1, 0.1, 0.8])
+                stim = kind
             
-        while now()-self.t0 < self.trial_duration:
-            pass
-        self.set_save(False)
-        self.t0 = None
-        self.ni.write_dio(self.LINE_SI_OFF, 1)
-        self.ni.write_dio(self.LINE_SI_OFF, 0)
-        return stim_time
+                self.ni.write_dio(self.LINE_SI_ON, 1)
+                self.ni.write_dio(self.LINE_SI_ON, 0)
+                self.set_save(True)
+                self.set_store(True)
+                self.t0 = now()
+                while now()-self.t0 < self.intro:
+                    pass
+                
+                if stim == self.CS:
+                    stim_time = self.send_cs()
+                    stim_time = [stim_time,-1]
+                elif stim==self.US:
+                    stim_time = self.send_us()
+                    stim_time = [-1,stim_time]
+                elif stim==self.CSUS:
+                    stim_time = self.send_csus()
+                    
+                while now()-self.t0 < self.trial_duration:
+                    pass
+                self.set_save(False)
+                self.t0 = None
+                self.ni.write_dio(self.LINE_SI_OFF, 1)
+                self.ni.write_dio(self.LINE_SI_OFF, 0)
+                self.last_stim_time = stim_time
+                
+                self.last_end = now()
+                self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
+                cs_time,us_time = self.last_stim_time
+                self.dataset_trials[-1,:] = np.array([self.last_start, self.last_end, cs_time, us_time, kind])
+                self.last_kind = kind
+                #self.set_flush(True)
+                self.set_store(False)
+                self.next_file()
+                threading.Thread(target=self.play_store).start()
+        self.done = True
     def send_cs(self):
-        self.ni.write_i2c('CS_ON')
-        self.ni.write_dio(self.LINE_CS, 1)
+        if STIM_ON:
+            self.ni.write_i2c('CS_ON')
+            self.ni.write_dio(self.LINE_CS, 1)
+        self.cstime_glob = time.time()
+        self.ustime_glob = time.time()
         t0 = now()
         while now()-t0 < self.cs_dur:
             pass
-        self.ni.write_i2c('CS_OFF')
-        self.ni.write_dio(self.LINE_CS, 0)
+        if STIM_ON:
+            self.ni.write_i2c('CS_OFF')
+            self.ni.write_dio(self.LINE_CS, 0)
         return t0
     def send_us(self):
-        self.ni.write_i2c('US_ON')
-        self.ni.write_dio(self.LINE_US, 1)
+        if STIM_ON:
+            self.ni.write_i2c('US_ON')
+            self.ni.write_dio(self.LINE_US, 1)
+        self.ustime_glob = time.time()
+        self.cstime_glob = time.time()
         t0 = now()
         while now()-t0 < self.us_dur:
             pass
-        self.ni.write_i2c('US_OFF')
-        self.ni.write_dio(self.LINE_US, 0)
+        if STIM_ON:
+            self.ni.write_i2c('US_OFF')
+            self.ni.write_dio(self.LINE_US, 0)
         return t0
     def send_csus(self):
-        self.ni.write_i2c('CS_ON')
-        self.ni.write_dio(self.LINE_CS, 1)
+        if STIM_ON:
+            self.ni.write_i2c('CS_ON')
+            self.ni.write_dio(self.LINE_CS, 1)
+        self.cstime_glob = time.time()
         t0 = now()
         while now()-t0 < self.csus_gap:
             pass
-        self.ni.write_i2c('US_ON')
-        self.ni.write_dio(self.LINE_US, 1)
+        if STIM_ON:
+            self.ni.write_i2c('US_ON')
+            self.ni.write_dio(self.LINE_US, 1)
+        self.ustime_glob = time.time()
         t1 = now()
         while now()-t1 < self.us_dur: ## NOTE! This assumes US finishes before CS. if not, change this
             pass
-        self.ni.write_i2c('US_OFF')
-        self.ni.write_dio(self.LINE_US, 0)
+        if STIM_ON:
+            self.ni.write_i2c('US_OFF')
+            self.ni.write_dio(self.LINE_US, 0)
         while now()-t0 < self.cs_dur:
             pass
-        self.ni.write_i2c('CS_OFF')
-        self.ni.write_dio(self.LINE_CS, 0)
+        if STIM_ON:
+            self.ni.write_i2c('CS_OFF')
+            self.ni.write_dio(self.LINE_CS, 0)
 
         return [t0,t1]
     def save_trial(self, dic):
         self.data_file.write('{}\n'.format(json.dumps(dic)))
     def update(self):
-        # this func will only be run when trials are not on. will update displays and params, etc
-        fr1 = self.cam1.get()
-        fr2 = self.cam2.get()
+        if self.trial_on:
+            return
+            
+        #fr1 = self.cam1.get()
+        fr2 = None
+        while fr2 is None:
+            fr2 = self.cam2.get()
         
         if fr2 is not None:
-            fr2x = cv2.cvtColor(fr2, cv2.COLOR_GRAY2RGBA)
-            fr2x[self.mask.sum(axis=0).astype(bool),0] += 10
-            cv2.imshow('Camera2', fr2x)
+            #fr2x = cv2.cvtColor(fr2, cv2.COLOR_GRAY2RGBA)
+            #fr2x[self.mask.sum(axis=0).astype(bool),0] += 10
+            #cv2.imshow('Camera2', fr2x)
             roi_data = self.extract(fr2)
             self.data_eye = np.roll(self.data_eye, -1)
             self.data_rawwheel = np.roll(self.data_rawwheel, -1)
             self.data_wheel = np.roll(self.data_wheel, -1)
             self.data_eye[-1] = roi_data[self.EYE]
             self.data_rawwheel[-1] = roi_data[self.WHEEL]
-            self.data_wheel[-1] = np.std(self.data_rawwheel[-self.window_motion:])
+            self.data_wheel[-1] = 10*np.std(self.data_rawwheel[-self.window_motion:])
             self.plot_line_eye.set_ydata(self.data_eye)
             self.plot_line_wheel.set_ydata(self.data_wheel)
             self.fig.canvas.draw()
-        if fr1 is not None:
-            cv2.imshow('Camera1', fr1)
+        #if fr1 is not None:
+        #    cv2.imshow('Camera1', fr1)
             
-        self.line_eyethresh.set_ydata(self.thresh_eye)
-        self.line_wheelthresh.set_ydata(self.thresh_wheel)
+            self.line_eyethresh.set_ydata(self.thresh_eye)
+            self.line_wheelthresh.set_ydata(self.thresh_wheel)
         
     def extract(self, fr):
         flat = fr.reshape((1,-1)).T
@@ -232,15 +294,17 @@ class Experiment():
         return self.mask
     def setup_panels(self):
         self.fig = pl.figure()
-        self.ax = self.fig.add_subplot(111)
+        self.ax = self.fig.add_subplot(211)
+        self.ax2 = self.fig.add_subplot(212)
         self.plot_line_eye, = self.ax.plot(np.zeros(self.plot_n), color='b')
         self.plot_line_wheel, = self.ax.plot(np.zeros(self.plot_n), color='g')
         self.line_eyethresh, = self.ax.plot([0, self.plot_n], [10,10], 'b--')
         self.line_wheelthresh, = self.ax.plot([0, self.plot_n], [10,10], 'g--')
         self.ax.set_ylim([-1,256])
         
-        self.win1 = cv2.namedWindow('Camera1')
-        self.win2 = cv2.namedWindow('Camera2')
+        #self.win1 = cv2.namedWindow('Camera1')
+        #self.win2 = cv2.namedWindow('Camera2')
+        self.win3 = cv2.namedWindow('Last trial')
         self.win_ctrl = cv2.namedWindow('Controls', cv2.WINDOW_NORMAL)
         cv2.createTrackbar('thresh_eye', 'Controls', self.thresh_eye, 255, self._cb_eye)
         cv2.createTrackbar('thresh_wheel', 'Controls', self.thresh_wheel, 255, self._cb_wheel)
@@ -249,6 +313,8 @@ class Experiment():
     def _cb_wheel(self, pos):
         self.thresh_wheel = pos
     def end(self):
+        while not self.done:
+            pass
         self.cam1.end()
         self.cam2.end()
         self.ni.end()
