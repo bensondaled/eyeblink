@@ -42,18 +42,18 @@ class Experiment():
         self.sync_val = now()
 
         # trial params
-        self.trial_duration = 20.0
+        self.trial_duration = 9.0
         self.cs_dur = 0.500
         self.us_dur = 0.030
         self.csus_gap = 0.250
-        self.intro = 7.0
+        self.intro = 4.0
         
         # params
-        self.min_iti = 8.0
+        self.min_iti = 1.0
         self.plot_n = 100.
         self.window_motion = 10.
         self.window_eye = 10.
-        self.thresh_wheel = 2
+        self.thresh_wheel = 4
         self.thresh_eye = 2
 
     def run(self):
@@ -82,6 +82,8 @@ class Experiment():
         self.data_rawwheel = np.zeros(self.plot_n)-1
         self.data_wheel = np.zeros(self.plot_n)-1
         q = 0
+        self.stim_cycle = 6*[self.CSUS] + [self.US] + 6*[self.CSUS] + [self.CS] + 3*[self.CSUS] + [self.US] + 3*[self.CSUS]
+        self.stim_cycle_idx = 0
         threading.Thread(target=self.deliver_trial).start()
         
         # main loop
@@ -99,7 +101,13 @@ class Experiment():
 
         self.on = False
         self.end()
-
+    
+    def next_stim_type(self):
+        st = self.stim_cycle[self.stim_cycle_idx]
+        self.stim_cycle_idx += 1
+        if self.stim_cycle_idx == len(self.stim_cycle):
+            self.stim_cycle_idx = 0
+        return st
     def play_store(self):
         s = None
         while s is None:
@@ -116,10 +124,11 @@ class Experiment():
         self.ax2.set_ylim([traces[:,0].min(),traces[:,0].max()])
         #self.ax2.axis('tight')
         self.fig.canvas.draw()
-        for fr in s[::3]:
-            cv2.imshow('Last trial', fr)
-            cv2.waitKey(1)
-        cv2.imshow('Last trial', np.zeros(fr.shape))
+        #for fr in s[::3]:
+        #    cv2.imshow('Last trial', fr)
+        #    cv2.waitKey(1)
+        cv2.imshow('Last trial', s[::3].mean(axis=0))
+        cv2.waitKey(1)
         self.trial_on = False
     def set_store(self, val):
         self.cam2.set_store(val)
@@ -143,7 +152,7 @@ class Experiment():
                 self.trial_on = True
                 #self.set_flush(False)
                 self.last_start = now()
-                kind = np.random.choice([self.CS, self.US, self.CSUS], p=[0.1, 0.1, 0.8])
+                kind = self.next_stim_type()
                 stim = kind
             
                 self.ni.write_dio(self.LINE_SI_ON, 1)
@@ -180,6 +189,7 @@ class Experiment():
                 self.set_store(False)
                 self.next_file()
                 threading.Thread(target=self.play_store).start()
+                #self.trial_on = False #if you start the play_store thread, comment this out
         self.done = True
     def send_cs(self):
         if STIM_ON:
