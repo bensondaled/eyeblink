@@ -3,10 +3,10 @@ import matplotlib.pyplot as pl
 pl.ioff()
 import os, h5py, sys
 
-jobid = int(sys.argv[1])
-
 path = '/jukebox/wang/deverett/2p/eyeblink/b37/'
 seshs = sorted([os.path.splitext(i)[0] for i in os.listdir(path) if 'cam' not in i and 'data' not in i and 'series' not in i and 'fig' not in i])
+
+jobid = int(sys.argv[1])
 if jobid >= len(seshs):
     print 'extraneous job.'
     sys.exit(0)
