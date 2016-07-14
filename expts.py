@@ -6,7 +6,7 @@ import cv2, json, h5py, threading
 import multiprocessing as mp
 from cameras import PSEye as Camera
 from cameras import default_cam_params
-now = time.clock
+now = time.time
 from ni845x import NI845x
 
 STIM_ON = True
@@ -15,10 +15,11 @@ class Experiment():
     EYE, WHEEL = 0,1
     CS,US,CSUS = 0,1,2
     LINE_SI_ON, LINE_SI_OFF, LINE_CS, LINE_US = 3,4,0,1
-    def __init__(self, name, animal, save_path=r'C:\Users\deverett\Desktop\dummydata'):
+    def __init__(self, name, animal, imaging=False, save_path=r'C:\data\eyeblink'):
 
         self.name = name
         self.animal = animal
+        self.imaging = imaging
         self.base_path = save_path
         self.path = os.path.join(self.base_path, self.animal, self.name)
         self.data_filename = self.path + '_data.h5'
@@ -35,18 +36,18 @@ class Experiment():
         self.cam1.set_save(False)
         self.cam2.set_save(False)
         self.set_flush(False)
-        self.ni = NI845x()
+        self.ni = NI845x(i2c_on=imaging)
         
         time.sleep(4.0)
         sync_flag.value = True
         self.sync_val = now()
 
         # trial params
-        self.trial_duration = 9.0
+        self.trial_duration = 8.0
         self.cs_dur = 0.500
         self.us_dur = 0.030
         self.csus_gap = 0.250
-        self.intro = 4.0
+        self.intro = 3.0
         
         # params
         self.min_iti = 1.0
@@ -127,7 +128,7 @@ class Experiment():
         #for fr in s[::3]:
         #    cv2.imshow('Last trial', fr)
         #    cv2.waitKey(1)
-        cv2.imshow('Last trial', s[::3].mean(axis=0))
+        cv2.imshow('Last trial', s[::3].mean(axis=0).astype(np.uint8))
         cv2.waitKey(1)
         self.trial_on = False
     def set_store(self, val):
@@ -187,6 +188,7 @@ class Experiment():
                 self.last_kind = kind
                 #self.set_flush(True)
                 self.set_store(False)
+                self.data_eye[:] = 255
                 self.next_file()
                 threading.Thread(target=self.play_store).start()
                 #self.trial_on = False #if you start the play_store thread, comment this out
@@ -317,7 +319,7 @@ class Experiment():
         self.win3 = cv2.namedWindow('Last trial')
         self.win_ctrl = cv2.namedWindow('Controls', cv2.WINDOW_NORMAL)
         cv2.createTrackbar('thresh_eye', 'Controls', self.thresh_eye, 255, self._cb_eye)
-        cv2.createTrackbar('thresh_wheel', 'Controls', self.thresh_wheel, 255, self._cb_wheel)
+        cv2.createTrackbar('thresh_whl', 'Controls', self.thresh_wheel, 255, self._cb_wheel)
     def _cb_eye(self, pos):
         self.thresh_eye = pos
     def _cb_wheel(self, pos):
