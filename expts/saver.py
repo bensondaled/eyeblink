@@ -1,15 +1,16 @@
-import sys, os, threading, h5py, json, warnings, tables, logging, config, Queue
+import sys, os, threading, h5py, json, warnings, tables, logging, Queue
 import multiprocessing as mp
 import numpy as np
 import pandas as pd
 from util import now,now2
+import config
 from routines import add_to_saver_buffer
 
 class Saver(mp.Process):
     # To save, call saver.write() with either a dict or a numpy array
     # To end, just use the saver.end method. It will raise a kill flag, then perform a final flush.
 
-    def __init__(self, subj, sesh_name, session_obj, data_file=config.datafile, sync_flag=None, field_buffer_size=30):
+    def __init__(self, subj, sesh_name, session_obj, data_file=config.data_path, sync_flag=None, field_buffer_size=30):
         super(Saver, self).__init__()
 
         # Sync

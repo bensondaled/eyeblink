@@ -2,13 +2,17 @@ import numpy as np
 import pandas as pd
 import os, sys, h5py, time, logging
 pjoin = os.path.join
+import config
 
 def list_subjects():
-    subs = [d for d in os.listdir(data_path) if os.path.isdir(pjoin(data_path,d))]
-    return subs
+    if not os.path.exists(config.data_path):
+        return []
+    else:
+        subs = [d for d in os.listdir(config.data_path) if os.path.isdir(pjoin(config.data_path,d))]
+        return subs
 
 class Subject(object):
-    def __init__(self, name, data_path='./data'):
+    def __init__(self, name, data_path=config.data_path):
         # name check
         try:
             int(name)

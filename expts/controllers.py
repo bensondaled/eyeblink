@@ -1,14 +1,12 @@
 import threading, wx, time, sys, logging, Queue
 import numpy as np
 from session import Session
-from views import View, MP285View
+from views import View
 from subjects import Subject, list_subjects
 from settings.param_handlers import ParamHandler
-from hardware.valve import open_valves, close_valves
 from util import setup_logging
 from util import TCPIP
 import config
-from settings.constants import *
 
 def pretty_time(t):
     if t<60:
@@ -31,9 +29,7 @@ class Controller:
 
         # Generate view    
         subs_list = list_subjects()
-        self.cond_list = sorted(conditions.keys())
-        self.manip_list = sorted(manipulations.keys())
-        self.view = View(None, subs=subs_list, conditions=self.cond_list, manipulations=self.manip_list)
+        self.view = View(None, subs=subs_list)
         if False:#not config.TESTING_MODE:
             sys.stdout=self.view.redir_out
             sys.stderr=self.view.redir_err
@@ -171,17 +167,13 @@ class Controller:
 
         else:
             sel_sub = self.view.sub_box.GetSelection()
-            sel_cond = self.view.cond_box.GetSelection()
-            sel_manip = self.view.manip_box.GetSelection()
-            if wx.NOT_FOUND in [sel_sub,sel_cond,sel_manip]:
+            if wx.NOT_FOUND in [sel_sub]:
                 dlg = wx.MessageDialog(self.view, message='Selections not made.', caption='Preparation not performed.', style=wx.OK)
                 res = dlg.ShowModal()
                 dlg.Destroy()
                 return
 
             sub_name = self.view.sub_names[sel_sub]
-            cond_name = self.cond_list[sel_cond]
-            manip_name = self.manip_list[sel_manip]
             imaging = self.view.imaging_box.GetValue()
 
             sub = Subject(sub_name)
@@ -207,7 +199,7 @@ class Controller:
                         cont = False
 
             self.view.setup_axlick()
-            self.view.SetTitle('{} - {} - {}'.format(sub_name,cond_name,manip_name))
+            self.view.SetTitle('Subject {}'.format(sub_name))
 
             self.update_state(self.STATE_PREPARED)
             self.update()
@@ -278,7 +270,7 @@ class Controller:
             self.session.spout.go(side)
         else:
             give_reward(side)
-    def give_puff(self, evt, side):
+    def evt_puff(self, evt, side):
         self.session.stimulator.go(side)
 
     def update_usrinput(self, evt):

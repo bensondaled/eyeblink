@@ -134,7 +134,7 @@ class View(wx.Frame):
         self.sizer_r = wx.BoxSizer(wx.VERTICAL)
 
         self.sizer_l.Add(self.panel_performance, flag=wx.EXPAND, proportion=1)
-        self.sizer_l.Add(self.panel_lick, flag=wx.EXPAND, proportion=1)
+        self.sizer_l.Add(self.panel_live, flag=wx.EXPAND, proportion=1)
         self.sizer_r.Add(self.panel_mov, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
         self.sizer_r.Add(self.panel_trial, flag=wx.EXPAND, proportion=1)
 
