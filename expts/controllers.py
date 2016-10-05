@@ -4,6 +4,7 @@ from session import Session
 from views import View
 from subjects import Subject, list_subjects
 from settings.param_handlers import ParamHandler
+from hardware import dummy_light,dummy_puff
 from util import setup_logging
 from util import TCPIP
 import config
@@ -112,7 +113,7 @@ class Controller:
             return
 
         # checks
-        if self.view.trial_n_widg.GetValue() == str(self.session.th.idx):
+        if self.view.trial_n_widg.GetValue() == str(self.session.trial_idx):
             new_trial_flag = False
         else:
             new_trial_flag = True
@@ -150,14 +151,9 @@ class Controller:
         self.update_timer = wx.CallLater(self.REFRESH_INTERVAL, self.update)
 
     def update_trial(self):
-        if self.session.th.idx < 0:
+        if self.session.trial_idx < 0:
             return
-        self.view.trial_n_widg.SetValue("%s (%s)"%(str(self.session.th.idx),str(self.session.th.valid_idx)))
-        self.view.set_trial_data(self.session.th, self.session)
-        self.view.rewarded_widg.SetValue(str(self.session.rewards_given))
-        self.view.set_bias(self.session.th.biases)
-        if self.session.th.idx > 0:
-            self.view.set_history(self.session.th)
+        self.view.trial_n_widg.SetValue("%s"%(str(self.session.trial_idx)))
 
     ####### EVENTS ########
     def evt_prepare(self, evt):
@@ -198,7 +194,7 @@ class Controller:
                     else:
                         cont = False
 
-            self.view.setup_axlick()
+            self.view.setup_axlive()
             self.view.SetTitle('Subject {}'.format(sub_name))
 
             self.update_state(self.STATE_PREPARED)
@@ -265,14 +261,16 @@ class Controller:
         else:
             pass
 
-    def give_reward(self, evt, side):
-        if self.state in [self.STATE_RUNNING,self.STATE_PREPARED]:
-            self.session.spout.go(side)
+    def set_light(self, evt, state):
+        if self.state in [self.STATE_PREPARED,self.STATE_RUNNING,self.STATE_KILLED_SESSION]:
+            self.session.dummy_light(state)
         else:
-            give_reward(side)
-    def evt_puff(self, evt, side):
-        self.session.stimulator.go(side)
-
+            dummy_light(state)
+    def evt_puff(self, evt):
+        if self.state in [self.STATE_PREPARED,self.STATE_RUNNING,self.STATE_KILLED_SESSION]:
+            self.session.dummy_puff()
+        else:
+            dummy_puff()
     def update_usrinput(self, evt):
         self.session.notes = self.view.usrinput_box.GetValue()
         logging.info('Metadata updated.')

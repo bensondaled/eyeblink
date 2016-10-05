@@ -5,14 +5,11 @@ pjoin = os.path.join
 import config
 
 def list_subjects():
-    if not os.path.exists(config.data_path):
-        return []
-    else:
-        subs = [d for d in os.listdir(config.data_path) if os.path.isdir(pjoin(config.data_path,d))]
-        return subs
+    subs = [d for d in os.listdir('./data') if os.path.isdir(pjoin('./data',d))]
+    return subs
 
 class Subject(object):
-    def __init__(self, name, data_path=config.data_path):
+    def __init__(self, name, data_path='./data'):
         # name check
         try:
             int(name)

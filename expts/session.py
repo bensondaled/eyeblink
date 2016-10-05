@@ -27,17 +27,18 @@ class Session(object):
         self.ar = AnalogReader(saver_obj_buffer=self.saver.buf, sync_flag=self.sync_flag, **self.ar_params)
 
         # communication
-        if self.imaging:
-            self.ni = NI845x(i2c_on=self.imaging)
+        self.ni = NI845x()
 
         # runtime variables
         self.notes = {}
         self.session_on = 0
+        self.on = False
         self.session_complete = False
         self.session_kill = False
         self.trial_flag = False
         self.trial_on = 0
         self.trial_off = 0
+        self.trial_idx = -1
         self.stim_cycle_idx = 0
         self.paused = False
         
@@ -49,13 +50,25 @@ class Session(object):
         sync_vals['session'] = self.sync_val
         self.sync_to_save.put(sync_vals)
 
+    @property
+    def session_runtime(self):
+        if self.session_on != 0:
+            return now()-self.session_on
+        else:
+            return -1
+    @property
+    def trial_runtime(self):
+        if self.trial_on != 0:
+            return now()-self.trial_on
+        else:
+            return -1
     def name_as_str(self):
         return self.name.strftime('%Y%m%d%H%M%S')
 
     def verify_params(self):
         if self.name is None:
             self.name = pd.datetime.now()
-        self.cam_params.update(dict(save_name=pjoin(self.subj.subj_dir, self.name_as_str())))
+        self.cam_params.update(dict(save_name=pjoin(self.subj.subj_dir, self.name_as_str()+'_cams.h5')))
 
     def pause(self, val):
         self.paused = val
@@ -88,6 +101,7 @@ class Session(object):
             if self.trial_flag:
 
                 # prepare trial
+                self.trial_idx += 1
                 self.trial_flag = False
                 self.trial_on = now()
                 self.cam.set_flush(False)
@@ -104,7 +118,13 @@ class Session(object):
                 self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
                 cs_time,us_time = self.last_stim_time
                 self.dataset_trials[-1,:] = np.array([self.last_start, self.trial_off, cs_time, us_time, kind])
-        
+    
+    def dummy_puff(self):
+        self.ni.write_dio(LINE_US, 1)
+        self.wait(self.us_dur)
+        self.ni.write_dio(LINE_US, 0)
+    def dummy_light(self, state):
+        self.ni.write_dio(LINE_CS, state)
     def send_stim(self, kind):
         if kind == CS:
             t = (now(), now2())
@@ -147,8 +167,10 @@ class Session(object):
         try:
 
             self.session_on = now()
+            self.on = True
             self.ar.begin_saving()
             self.cam.begin_saving()
+            self.cam.set_flush(True)
             self.start_acq()
         
             # main loop

@@ -10,7 +10,7 @@ class Saver(mp.Process):
     # To save, call saver.write() with either a dict or a numpy array
     # To end, just use the saver.end method. It will raise a kill flag, then perform a final flush.
 
-    def __init__(self, subj, sesh_name, session_obj, data_file=config.data_path, sync_flag=None, field_buffer_size=30):
+    def __init__(self, subj, sesh_name, session_obj, data_file='noname.h5', sync_flag=None, field_buffer_size=30):
         super(Saver, self).__init__()
 
         # Sync
@@ -21,9 +21,8 @@ class Saver(mp.Process):
         self.subj = subj
         self.sesh_name = sesh_name
         self.session_obj = session_obj
-        self.data_file = data_file
-        self.sesh_path = ['sessions', self.sesh_name.strftime('%Y%m%d%H%M%S')]
-        self.past_trials = self.get_past_trials()
+        self.data_file = os.path.join(self.subj.subj_dir, self.sesh_name.strftime('%Y%m%d%H%M%S')+'_data.h5')
+        self.sesh_path = ['']
         self.field_buffer_size = field_buffer_size
 
         # Externally accessible flags and variables

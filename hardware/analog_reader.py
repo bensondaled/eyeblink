@@ -15,7 +15,7 @@ class AnalogReader(mp.Process):
     READ_BUF_SIZE = 10
     ACCUM_SIZE = 2000 # Must be multiple of READ_BUF_SIZE
 
-    def __init__(self, ports=['ai0','ai1','ai5','ai6'], portnames=['lickl','lickr','puffl','puffr'], runtime_ports=[0,1], lickport_ports=[0,1], moving_port=2, moving_magnitude=5., lick_thresh=6., holding_thresh=1.0, moving_thresh=1.0, daq_sample_rate=500., save_buffer_size=8000, saver_obj_buffer=None, sync_flag=None, **daq_kwargs):
+    def __init__(self, ports=['ai0'], portnames=['hall'], runtime_ports=[0], movement_port=0, movement_window=1.0, movement_thresh=3., daq_sample_rate=500., save_buffer_size=8000, saver_obj_buffer=None, sync_flag=None, **daq_kwargs):
         super(AnalogReader, self).__init__()
         self.daq_kwargs = daq_kwargs
         
@@ -26,17 +26,13 @@ class AnalogReader(mp.Process):
         # Data acquisition parameters
         self.ports = ports
         self.portnames = portnames
-        self.runtime_ports = runtime_ports # to be used in accumulator and lick/holding variable, and wheel sensor
-        self.lickport_ports = lickport_ports # indices *of runtime_ports* that correspond to lick tubes
-        self.moving_port = moving_port # index *of runtime_ports* that corresponds to wheel sensor
-        self._lickport_idxs = np.asarray(self.runtime_ports)[self.lickport_ports]
+        self.runtime_ports = runtime_ports # to be used in accumulator
+        self.movement_port = movement_port # index *of runtime_ports* that corresponds to wheel sensor
         self.daq_sample_rate = daq_sample_rate
         
         # Data processing parameters
-        self.thresh = lick_thresh
-        self.holding_thresh = int(holding_thresh * self.daq_sample_rate)
-        self.moving_thresh = int(moving_thresh * self.daq_sample_rate)
-        self.moving_magnitude = moving_magnitude
+        self.movement_window = int(movement_window * self.daq_sample_rate) # movement_window
+        self.movement_thresh = movement_thresh
 
         # data containers
         self.accum = np.zeros((len(self.ports),self.ACCUM_SIZE))
@@ -44,8 +40,6 @@ class AnalogReader(mp.Process):
         self.accum_q = mp.Array('d', len(self.runtime_ports)*self.ACCUM_SIZE)
 
         # processing containers
-        self.licked_ = mp.Array('b', [False, False])
-        self.holding_ = mp.Value('b', False)
         self.moving_ = mp.Value('b', False)
         
         # threading structures
@@ -63,18 +57,6 @@ class AnalogReader(mp.Process):
         self._kill_flag = mp.Value('b', False)
         self.start()
 
-    @property
-    def licked(self):
-        with self.logic_lock:
-            temp = mp.sharedctypes.copy(self.licked_.get_obj())
-            self.licked_[:] = [False, False]
-        return temp
-    @property
-    def holding(self):
-        with self.logic_lock:
-            temp = self.holding_.value
-            self.holding_.value = False
-        return temp
     @property
     def moving(self):
         with self.logic_lock:
@@ -130,10 +112,8 @@ class AnalogReader(mp.Process):
             # update experimental logic
             with self.logic_lock:
                 
-                self.licked_[:] = np.any(dat[self._lickport_idxs,:]>=self.thresh, axis=1)
-                self.holding_.value = np.any(np.all(self.accum[self._lickport_idxs,-self.holding_thresh:]>self.thresh, axis=1))
-                _tmp_moving = self.accum[self.runtime_ports[self.moving_port], -self.moving_thresh:]
-                self.moving_.value = np.max(_tmp_moving)-np.min(_tmp_moving) > self.moving_magnitude
+                _tmp_moving = self.accum[self.runtime_ports[self.movement_port], -self.movement_window:]
+                self.moving_.value = np.max(_tmp_moving)-np.min(_tmp_moving) > self.movement_thresh
 
             if dump and self._saving.value:
                 if self.n_added_to_save_buffer > self.save_buffer_size:

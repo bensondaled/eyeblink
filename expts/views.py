@@ -176,8 +176,6 @@ class View(wx.Frame):
         self.ax_live.set_xlim([0,self.n_live_show])
     def set_live_data(self, data):
         self.live_data1.set_ydata(data[0][-self.n_live_show:])
-        self.live_data2.set_ydata(data[1][-self.n_live_show:])
-        self.live_data3.set_ydata(data[2][-self.n_live_show:])
         self.fig_live.canvas.draw()
 
 class MoviePanel(wx.Panel):
