@@ -15,7 +15,8 @@ class View(wx.Frame):
         wx.Frame.__init__(self, parent, title="Eyeblink Experiment Control", size=size)
         self.Center()
         
-        self.n_live_show = 1200
+        self.n_live_show = [1200,90]
+        self.n_past_show = 50
         
         # Leftmost panel
         self.panel_left_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -40,12 +41,17 @@ class View(wx.Frame):
         self.trial_runtime_widg = wx.TextCtrl(self.panel_top)
         self.trial_runtime_widg.SetEditable(False)
         self.trial_runtime_lab = wx.StaticText(self.panel_top, label='Trial time: ', style=wx.ALIGN_RIGHT)
+        self.trial_type_widg = wx.TextCtrl(self.panel_top)
+        self.trial_type_widg.SetEditable(False)
+        self.trial_type_lab = wx.StaticText(self.panel_top, label='Trial type: ', style=wx.ALIGN_RIGHT)
         self.panel_top_sizer.Add(self.trial_n_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top_sizer.Add(self.trial_n_widg, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_top_sizer.Add(self.session_runtime_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top_sizer.Add(self.session_runtime_widg, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_top_sizer.Add(self.trial_runtime_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top_sizer.Add(self.trial_runtime_widg,flag=wx.EXPAND|wx.ALL, proportion=1)
+        self.panel_top_sizer.Add(self.trial_type_lab, flag=wx.ALIGN_RIGHT, proportion=1)
+        self.panel_top_sizer.Add(self.trial_type_widg,flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_top.SetSizerAndFit(self.panel_top_sizer)
         
         # 2nd from top panel
@@ -56,11 +62,15 @@ class View(wx.Frame):
         self.lightoff_but = wx.Button(self.panel_top2, label='OFF')
         self.puff_lab = wx.StaticText(self.panel_top2, label='Give puff: ', style=wx.ALIGN_RIGHT)
         self.puff_but = wx.Button(self.panel_top2, label='PUFF')
+        self.roi_lab = wx.StaticText(self.panel_top2, label='Select ROI: ', style=wx.ALIGN_RIGHT)
+        self.roi_but = wx.Button(self.panel_top2, label='BEGIN')
         self.panel_top2_sizer.Add(self.light_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top2_sizer.Add(self.lighton_but, proportion=1)
         self.panel_top2_sizer.Add(self.lightoff_but, proportion=1)
         self.panel_top2_sizer.Add(self.puff_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top2_sizer.Add(self.puff_but, proportion=1)
+        self.panel_top2_sizer.Add(self.roi_lab, flag=wx.ALIGN_RIGHT, proportion=1)
+        self.panel_top2_sizer.Add(self.roi_but, proportion=1)
         self.panel_top2.SetSizerAndFit(self.panel_top2_sizer)
 
         # bottom panel
@@ -72,6 +82,7 @@ class View(wx.Frame):
         self.pause_button.SetBackgroundColour((0,150,150))
         self.prepare_button = wx.Button(self.panel_bottom, label="Prepare Session")
         self.tcpip_button = wx.Button(self.panel_bottom, label="TCPIP")
+        self.resetcam_button = wx.Button(self.panel_bottom, label="Reset Cams")
         self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom_sizer.Add(self.prepare_button, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_bottom_sizer.AddStretchSpacer()
@@ -81,22 +92,25 @@ class View(wx.Frame):
         self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom_sizer.Add(self.tcpip_button, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_bottom_sizer.AddStretchSpacer()
+        self.panel_bottom_sizer.Add(self.resetcam_button, flag=wx.EXPAND|wx.ALL, proportion=1)
+        self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom.SetSizerAndFit(self.panel_bottom_sizer)
 
-        # performance plot panel (UNUSED)
-        self.panel_performance = wx.Panel(self,3)
-        self.panel_performance_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        # interactive plot panel
+        self.panel_interactive = wx.Panel(self,3)
+        self.panel_interactive_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.fig = Figure( figsize=(7.5, 4), dpi=80 )
-        self.ax0 = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasWxAgg(self.panel_performance, -1, self.fig)
-        self.panel_performance_sizer.Add(self.canvas, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_performance.SetSizerAndFit(self.panel_performance_sizer)
+        self.ax_interactive = self.fig.add_subplot(111)
+        self.canvas = FigureCanvasWxAgg(self.panel_interactive, -1, self.fig)
+        self.panel_interactive_sizer.Add(self.canvas, flag=wx.EXPAND|wx.ALL, proportion=1)
+        self.panel_interactive.SetSizerAndFit(self.panel_interactive_sizer)
         
         # live measurements panel
         self.panel_live = wx.Panel(self,4)
         self.panel_live_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.fig_live = Figure( figsize=(7.5, 4), dpi=80 )
-        self.ax_live = self.fig_live.add_subplot(111)
+        self.ax_live = self.fig_live.add_subplot(211)
+        self.ax_live2 = self.fig_live.add_subplot(212)
         self.canvas_live = FigureCanvasWxAgg(self.panel_live, -1, self.fig_live)
         self.panel_live_sizer.Add(self.canvas_live, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_live.SetSizerAndFit(self.panel_live_sizer)
@@ -104,14 +118,14 @@ class View(wx.Frame):
         # movie panel
         self.panel_mov = MoviePanel(self)
         
-        # trial display panel (UNUSED)
-        self.panel_trial = wx.Panel(self,5)
-        self.panel_trial_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.fig_trial = Figure( figsize=(6.5, 3), dpi=80 )
-        self.ax_trial = self.fig_trial.add_subplot(111)
-        self.canvas_trial = FigureCanvasWxAgg(self.panel_trial, -1, self.fig_trial)
-        self.panel_trial_sizer.Add(self.canvas_trial, flag=wx.EXPAND|wx.ALL, proportion=1)
-        self.panel_trial.SetSizerAndFit(self.panel_trial_sizer)
+        # past data
+        self.panel_past = wx.Panel(self,5)
+        self.panel_past_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.fig_past = Figure( figsize=(7.5, 4), dpi=80 )
+        self.ax_past = self.fig_past.add_subplot(111)
+        self.canvas_past = FigureCanvasWxAgg(self.panel_past, -1, self.fig_past)
+        self.panel_past_sizer.Add(self.canvas_past, flag=wx.EXPAND|wx.ALL, proportion=1)
+        self.panel_past.SetSizerAndFit(self.panel_past_sizer)
 
         # live stream textbox
         self.std_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -133,7 +147,7 @@ class View(wx.Frame):
         self.sizer_l = wx.BoxSizer(wx.VERTICAL)
         self.sizer_r = wx.BoxSizer(wx.VERTICAL)
 
-        self.sizer_l.Add(self.panel_performance, flag=wx.EXPAND, proportion=1)
+        self.sizer_l.Add(self.panel_interactive, flag=wx.EXPAND, proportion=1)
         self.sizer_l.Add(self.panel_live, flag=wx.EXPAND, proportion=1)
         self.sizer_r.Add(self.panel_mov, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
         self.sizer_r.Add(self.panel_trial, flag=wx.EXPAND, proportion=1)
@@ -171,12 +185,20 @@ class View(wx.Frame):
         self.update_sub_choices()
     def setup_axlive(self):
         self.ax_live.clear()
-        self.live_data1,self.live_data2,self.live_data3 = self.ax_live.plot(np.zeros((self.n_live_show,3)), alpha=0.5)
+        self.live_data_handles = [ax.plot(np.zeros(n))[0] for ax,n in zip([self.ax_live,self.ax_live2], self.n_live_show)]
         self.ax_live.set_ylim([-.9,10.1])
-        self.ax_live.set_xlim([0,self.n_live_show])
-    def set_live_data(self, data):
-        self.live_data1.set_ydata(data[0][-self.n_live_show:])
+        self.ax_live.set_xlim([0,self.n_live_show[0]])
+        self.ax_live2.set_ylim([-.9,256])
+        self.ax_live2.set_xlim([0,self.n_live_show[1]])
+        
+        self.past_data, = self.ax_past.plot(np.zeros(self.n_past_show))
+    def set_live_data(self, *args):
+        for i,data,line in zip(np.arange(len(args)),args,self.live_data_handles):
+            line.set_ydata(np.squeeze(data)[-self.n_live_show[i]:])
         self.fig_live.canvas.draw()
+    def set_past_data(self, data):
+        self.past_data.set_ydata(data[-self.n_past_show:])
+        self.fig_past.canvas.draw()
 
 class MoviePanel(wx.Panel):
     def __init__(self, parent, size=(320,240)):

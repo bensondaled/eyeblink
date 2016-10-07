@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-import time, threading, os, logging, json, multiprocessing
+import matplotlib.pyplot as pl
+import time, threading, os, logging, json, multiprocessing, cv2
 from hardware import AnalogReader, PSEye, NI845x
 from saver import Saver
 from util import now, now2
@@ -9,7 +10,7 @@ pjoin = os.path.join
 
 class Session(object):
 
-    def __init__(self, session_params):
+    def __init__(self, session_params, ax_interactive=None):
         # incorporate kwargs
         self.params = session_params
         self.__dict__.update(self.params)
@@ -27,8 +28,11 @@ class Session(object):
         self.ar = AnalogReader(saver_obj_buffer=self.saver.buf, sync_flag=self.sync_flag, **self.ar_params)
 
         # communication
-        self.ni = NI845x()
+        self.ni = NI845x(i2c_on=self.imaging)
 
+        # interactivity
+        self.ax_interactive = ax_interactive
+        
         # runtime variables
         self.notes = {}
         self.session_on = 0
@@ -41,6 +45,9 @@ class Session(object):
         self.trial_idx = -1
         self.stim_cycle_idx = 0
         self.paused = False
+        self.im = self.cam.get()
+        self.roi_pts = None
+        self.eyelid_buffer = np.zeros(self.eyelid_buffer_size)-1
         
         # sync
         self.sync_flag.value = True #trigger all processes to get time
@@ -89,13 +96,18 @@ class Session(object):
         while now()-t0 < dur:
             pass
 
-    def next_stim_type(self):
+    def next_stim_type(self, inc=True):
         st = self.cycle[self.stim_cycle_idx]
-        self.stim_cycle_idx += 1
-        if self.stim_cycle_idx == len(self.cycle):
-            self.stim_cycle_idx = 0
+        if inc:
+            self.stim_cycle_idx += 1
+            if self.stim_cycle_idx == len(self.cycle):
+                self.stim_cycle_idx = 0
         return st
-                
+        
+    @property
+    def current_stim_state(self):
+        return STIM_TYPES[self.cycle[self.stim_cycle_idx]]
+        
     def deliver_trial(self):
         while self.on:
             if self.trial_flag:
@@ -115,9 +127,11 @@ class Session(object):
 
                 # save trial info
                 self.cam.set_flush(True)
-                self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
-                cs_time,us_time = self.last_stim_time
-                self.dataset_trials[-1,:] = np.array([self.last_start, self.trial_off, cs_time, us_time, kind])
+                
+                #TODO: save the data
+                #self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
+                #cs_time,us_time = self.last_stim_time
+                #self.dataset_trials[-1,:] = np.array([self.last_start, self.trial_off, cs_time, us_time, kind])
     
     def dummy_puff(self):
         self.ni.write_dio(LINE_US, 1)
@@ -163,9 +177,24 @@ class Session(object):
 
         return stim_time
 
+    def acquire_mask(self):
+        x,y = self.cam.resolution[0]
+        if self.roi_pts is None:
+            self.roi_pts = [[0,0],[x,0],[x,y],[0,y]]
+            logging.warning('No ROI found, using default')
+        pts_eye = np.array(self.roi_pts, dtype=np.int32)
+        mask_eye = np.zeros([y,x], dtype=np.int32)
+        cv2.fillConvexPoly(mask_eye, pts_eye, (1,1,1), lineType=cv2.LINE_AA)
+        self.mask = mask_eye
+        self.mask_flat = self.mask.reshape((1,-1))
+        #TODO: save this mask
+        
     def run(self):
         try:
 
+            # get selections
+            self.acquire_mask()
+            
             self.session_on = now()
             self.on = True
             self.ar.begin_saving()
@@ -177,7 +206,7 @@ class Session(object):
             threading.Thread(target=self.deliver_trial).start()
             while True:
 
-                if self.trial_on:
+                if self.trial_on or self.paused:
                     continue
 
                 if self.session_kill:
@@ -185,7 +214,7 @@ class Session(object):
                 
                 moving = self.determine_motion()
                 eyelid = self.determine_eyelid()
-
+                
                 if (now()-self.trial_off>self.min_iti) and (not moving) and (eyelid):
                     self.trial_flag = True
 
@@ -194,12 +223,23 @@ class Session(object):
         except:
             logging.error('Session has encountered an error!')
             raise
-
     def determine_eyelid(self):
-        pass
-        #TODO: get camera input from eye camera, compute eyelid
+        im = self.cam.get()
+        if im is None:
+            return
+        self.im = im
+        roi_data = self.extract(self.im)
+        self.eyelid_buffer = np.roll(self.eyelid_buffer, -1)
+        self.eyelid_buffer[-1] = roi_data
+        return np.mean(self.eyelid_buffer[-self.eyelid_window:]) < self.eyelid_thresh
+    def extract(self, fr):
+        if fr is None:
+            return 0
+        flat = fr.reshape((1,-1)).T
+        dp = (self.mask_flat.dot(flat)).T
+        return np.squeeze(dp/self.mask_flat.sum(axis=-1))
     def determine_motion(self):
-        pass #TODO
+        return self.ar.moving
    
     def end(self):
         self.on = False

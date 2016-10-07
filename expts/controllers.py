@@ -1,5 +1,6 @@
 import threading, wx, time, sys, logging, Queue
 import numpy as np
+import matplotlib.pyplot as pl
 from session import Session
 from views import View
 from subjects import Subject, list_subjects
@@ -47,10 +48,15 @@ class Controller:
         self.view.lighton_but.Bind(wx.EVT_BUTTON, lambda evt, temp=1: self.set_light(evt, temp))
         self.view.lightoff_but.Bind(wx.EVT_BUTTON, lambda evt, temp=0: self.set_light(evt, temp))
         self.view.puff_but.Bind(wx.EVT_BUTTON, self.evt_puff)
+        self.view.roi_but.Bind(wx.EVT_BUTTON, self.evt_roi)
         self.view.add_sub_button.Bind(wx.EVT_BUTTON, self.evt_addsub)
+        self.view.resetcam_button.Bind(wx.EVT_BUTTON, self.evt_resetcam)
         self.view.usrinput_box.Bind(wx.EVT_TEXT_ENTER, self.update_usrinput)
+        self.view.ax_interactive.figure.canvas.mpl_connect('button_press_event', self.evt_interactive_click)
 
         # Runtime
+        self.selection_pts = []
+        self.selecting = False
         self.update_state(self.STATE_NULL)
         self.n_updates = 0
 
@@ -124,12 +130,13 @@ class Controller:
 
         # plots
         try:
-            self.view.set_live_data(self.session.ar.get_accum())
+            aq = self.session.ar.get_accum()
+            self.view.set_live_data(aq, self.session.eyelid_buffer)
         except Queue.Empty:
             pass
 
         # movie
-        cam_frame = self.session.cam.get()
+        cam_frame = self.session.im
         self.view.panel_mov.set_frame(cam_frame)
         
         # trial
@@ -154,6 +161,8 @@ class Controller:
         if self.session.trial_idx < 0:
             return
         self.view.trial_n_widg.SetValue("%s"%(str(self.session.trial_idx)))
+        self.view.trial_type_widg.SetValue(self.session.trial.current.stim.state)
+        self.view.set_past_data(self.session.eyelid_buffer)
 
     ####### EVENTS ########
     def evt_prepare(self, evt):
@@ -174,7 +183,7 @@ class Controller:
 
             sub = Subject(sub_name)
             ph = ParamHandler(sub, imaging=imaging)
-            self.session = Session(ph.params)
+            self.session = Session(ph.params, ax_interactive=self.view.ax_interactive)
 
             # tcpip communication
             if imaging:
@@ -274,3 +283,32 @@ class Controller:
     def update_usrinput(self, evt):
         self.session.notes = self.view.usrinput_box.GetValue()
         logging.info('Metadata updated.')
+    def evt_roi(self, evt):
+        if self.state != self.STATE_PREPARED:
+            logging.info('Only pre-run ROI selection currently implemented.')
+            return
+            
+        if not self.selecting:
+            self.view.roi_but.SetLabel('DONE')
+            im = self.session.cam.get()
+            self.view.ax_interactive.imshow(im, cmap=pl.cm.Greys_r)
+            self.view.ax_interactive.axis([0,im.shape[1],0,im.shape[0]])
+            self.view.ax_interactive.figure.canvas.draw()
+            logging.info('Select ROI now, and press DONE to stop.')
+            self.selecting = True
+        elif self.selecting:
+            self.session.roi_pts = np.copy(self.selection_pts)
+            logging.info('ROI Set.')
+            self.view.roi_but.SetLabel('BEGIN')
+            self.selection_pts = []
+            self.selecting = False
+    def evt_resetcam(self, evt):
+        if self.state in [self.STATE_PREPARED, self.STATE_RUNNING]:
+            self.session.cam.reset_cams()
+    def evt_interactive_click(self, event):
+        if self.selecting:
+            self.selection_pts.append((event.xdata, event.ydata))
+            lims = self.view.ax_interactive.axis()
+            self.view.ax_interactive.plot(event.xdata,event.ydata,'rx')
+            self.view.ax_interactive.axis(lims)
+            self.view.ax_interactive.figure.canvas.draw()

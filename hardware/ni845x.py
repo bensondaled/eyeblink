@@ -29,7 +29,7 @@ class NI845x():
     INPUT,OUTPUT = 0,1
     kNi845xI2cAddress7Bit = 0
     kNi845xI2cAddress10Bit = 1
-    def __init__(self):
+    def __init__(self, i2c_on=True):
        
         # Determine available devices
         NextDevice = ctypes.create_string_buffer(DEV_SIZE)
@@ -42,8 +42,10 @@ class NI845x():
             raise Exception('Only implemented support for exactly 1 USB card. {} found.'.format(NumberFound.value))
         self._name = NextDevice
         
+        self.i2c_on = i2c_on
         self._open()
-        self.config_i2c()
+        if self.i2c_on:
+            self.config_i2c()
         self.set_io_voltage_level(self.VOLTS33)
         self.set_port_line_direction_map(self.OUTPUT*np.ones(8))
         
@@ -68,7 +70,8 @@ class NI845x():
     
     def end(self):
         errChk(ni845x_dll.ni845xClose(self.dev_handle))
-        errChk(ni845x_dll.ni845xI2cConfigurationClose(self.i2c_handle))
+        if self.i2c_on:
+            errChk(ni845x_dll.ni845xI2cConfigurationClose(self.i2c_handle))
 
     def write_dio(self, line, val, port=0):
         line = ctypes.c_uint8(line)
@@ -124,7 +127,8 @@ class NI845x():
             None
             
         """
-        
+        if not self.i2c_on:
+            return
         data = ctypes.create_string_buffer(data)
         nbytes = ctypes.c_int32(len(data))
 

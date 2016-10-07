@@ -27,6 +27,11 @@ class ParamHandler(object):
         
         # cam parameters
         cam_params                  = default_cam_params,
+        
+        # eyelid parameters
+        eyelid_buffer_size          = 100,
+        eyelid_window               = 10,
+        eyelid_thresh               = -1,
 
         # Experiment parameters
         subj                        = None,
