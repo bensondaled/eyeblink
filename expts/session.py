@@ -45,9 +45,10 @@ class Session(object):
         self.trial_idx = -1
         self.stim_cycle_idx = 0
         self.paused = False
-        self.im = self.cam.get()
+        _,self.im = self.cam.get()
         self.roi_pts = None
         self.eyelid_buffer = np.zeros(self.eyelid_buffer_size)-1
+        self.eyelid_buffer_ts = np.zeros(self.eyelid_buffer_size)-1
         
         # sync
         self.sync_flag.value = True #trigger all processes to get time
@@ -121,17 +122,24 @@ class Session(object):
            
                 # deilver trial
                 self.wait(self.intro)
-                stim_time = self.send_stim(kind)
+                cs_time,us_time = self.send_stim(kind)
                 self.wait(self.trial_duration, t0=self.trial_on)
                 self.trial_off = now()
 
                 # save trial info
                 self.cam.set_flush(True)
                 
-                #TODO: save the data
-                #self.dataset_trials.resize(len(self.dataset_trials)+1, axis=0)
-                #cs_time,us_time = self.last_stim_time
-                #self.dataset_trials[-1,:] = np.array([self.last_start, self.trial_off, cs_time, us_time, kind])
+                trial_dict = dict(\
+                start   = self.trial_on,\
+                end     = self.trial_off,\
+                cs_ts0  = cs_time[0],\
+                cs_ts1  = cs_time[1],\
+                us_ts0  = us_time[0],\
+                us_ts1  = us_time[1],\
+                kind    = kind,\
+                idx     = self.trial_idx,\
+                )
+                self.saver.write('trials',trial_dict)
     
     def dummy_puff(self):
         self.ni.write_dio(LINE_US, 1)
@@ -147,7 +155,7 @@ class Session(object):
             self.wait(self.cs_dur)
             self.ni.write_i2c('CS_OFF')
             self.ni.write_dio(LINE_CS, 0)
-            stim_time = [t,-1]
+            stim_time = [t,(-1,-1)]
 
         elif kind == US:
             self.wait(self.cs_dur) # for trial continuity
@@ -157,7 +165,7 @@ class Session(object):
             self.wait(self.us_dur)
             self.ni.write_i2c('US_OFF')
             self.ni.write_dio(LINE_US, 0)
-            stim_time = [-1,t]
+            stim_time = [(-1,-1),t]
 
         elif kind == CSUS:
             t_cs = (now(), now2())
@@ -187,7 +195,7 @@ class Session(object):
         cv2.fillConvexPoly(mask_eye, pts_eye, (1,1,1), lineType=cv2.LINE_AA)
         self.mask = mask_eye
         self.mask_flat = self.mask.reshape((1,-1))
-        #TODO: save this mask
+        self.saver.write('mask', self.mask)
         
     def run(self):
         try:
@@ -224,13 +232,15 @@ class Session(object):
             logging.error('Session has encountered an error!')
             raise
     def determine_eyelid(self):
-        im = self.cam.get()
+        imts,im = self.cam.get()
         if im is None:
             return
         self.im = im
         roi_data = self.extract(self.im)
         self.eyelid_buffer = np.roll(self.eyelid_buffer, -1)
+        self.eyelid_buffer_ts = np.roll(self.eyelid_buffer_ts, -1)
         self.eyelid_buffer[-1] = roi_data
+        self.eyelid_buffer_ts[-1] = imts
         return np.mean(self.eyelid_buffer[-self.eyelid_window:]) < self.eyelid_thresh
     def extract(self, fr):
         if fr is None:

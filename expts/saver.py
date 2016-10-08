@@ -10,7 +10,7 @@ class Saver(mp.Process):
     # To save, call saver.write() with either a dict or a numpy array
     # To end, just use the saver.end method. It will raise a kill flag, then perform a final flush.
 
-    def __init__(self, subj, sesh_name, session_obj, data_file='noname.h5', sync_flag=None, field_buffer_size=30):
+    def __init__(self, subj, sesh_name, session_obj, data_file='noname.h5', sync_flag=None, field_buffer_size=10):
         super(Saver, self).__init__()
 
         # Sync
@@ -75,7 +75,13 @@ class Saver(mp.Process):
                 logging.info('Saver final flush: {} items remain.'.format(self.buf.qsize()))
             
             source,data,ts,ts2,columns = record
-            if not isinstance(data, pd.DataFrame):
+            if isinstance(data, np.ndarray) and data.ndim==2:
+                self.f.close()
+                with h5py.File(self.data_file) as h:
+                    h.create_dataset(source, data=data)
+                self.f = pd.HDFStore(self.data_file, mode='a')
+                continue
+            elif not isinstance(data, pd.DataFrame):
                 data = pd.DataFrame(data, columns=columns, index=[ts])
             elif isinstance(data, pd.DataFrame):
                 data.set_index([[ts]*len(data)], inplace=True)

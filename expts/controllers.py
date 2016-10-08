@@ -131,7 +131,7 @@ class Controller:
         # plots
         try:
             aq = self.session.ar.get_accum()
-            self.view.set_live_data(aq, self.session.eyelid_buffer)
+            self.view.set_live_data((None,aq), (None,self.session.eyelid_buffer))
         except Queue.Empty:
             pass
 
@@ -162,7 +162,7 @@ class Controller:
             return
         self.view.trial_n_widg.SetValue("%s"%(str(self.session.trial_idx)))
         self.view.trial_type_widg.SetValue(self.session.trial.current.stim.state)
-        self.view.set_past_data(self.session.eyelid_buffer)
+        self.view.set_past_data(self.session.eyelid_buffer_ts,self.session.eyelid_buffer)
 
     ####### EVENTS ########
     def evt_prepare(self, evt):

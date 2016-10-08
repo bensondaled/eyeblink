@@ -84,6 +84,7 @@ class MovieSaver(mp.Process):
         self.query_idx = query_idx #which cam gets queried
         self.query_flag = mp.Value('b',False)
         self.query_queue = mp.Array(ctypes.c_uint8, np.product([self.resolution[self.query_idx][0], self.resolution[self.query_idx][1]]))
+        self.query_queue_ts = mp.Value('d',0.)
         
         self.start()
     def run(self):
@@ -137,6 +138,7 @@ class MovieSaver(mp.Process):
                              
                 if di==self.query_idx and self.query_flag.value:
                     self.query_queue[:] = temp.copy()
+                    self.query_queue_ts.value = ts[1]
                     self.query_flag.value = False
                 
                 if bsave: # flag that this frame was added to queue during a saving period
@@ -216,8 +218,9 @@ class PSEye():
         self.last_query = now()
         self.saver.query_flag.value = True
         fr = mp2np(self.saver.query_queue)
+        frts = self.saver.query_queue_ts.value
         x,y = self.resolution[self.query_idx]
-        return fr.reshape([y,x])
+        return frts,fr.reshape([y,x])
 
     def set_flush(self, val):
         self.flushing.value = val

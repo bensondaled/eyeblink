@@ -194,10 +194,16 @@ class View(wx.Frame):
         self.past_data, = self.ax_past.plot(np.zeros(self.n_past_show))
     def set_live_data(self, *args):
         for i,data,line in zip(np.arange(len(args)),args,self.live_data_handles):
-            line.set_ydata(np.squeeze(data)[-self.n_live_show[i]:])
+            y = np.squeeze(data[1])
+            line.set_ydata(y[-self.n_live_show[i]:])
+            if data[0] is not None:
+                line.set_xdata(data[0][-self.n_live_show[i]:])
         self.fig_live.canvas.draw()
-    def set_past_data(self, data):
-        self.past_data.set_ydata(data[-self.n_past_show:])
+    def set_past_data(self, datax, datay):
+        self.past_data.set_ydata(datay[-self.n_past_show:])
+        self.past_data.set_xdata(datax[-self.n_past_show:])
+        self.ax_past.set_xlim([np.min(datax), np.max(datax)])
+        self.ax_past.set_ylim([np.min(datay), np.max(datay)])
         self.fig_past.canvas.draw()
 
 class MoviePanel(wx.Panel):
