@@ -49,6 +49,7 @@ class Session(object):
         self.roi_pts = None
         self.eyelid_buffer = np.zeros(self.eyelid_buffer_size)-1
         self.eyelid_buffer_ts = np.zeros(self.eyelid_buffer_size)-1
+        self.past_flag = False
         
         # sync
         self.sync_flag.value = True #trigger all processes to get time
@@ -66,7 +67,7 @@ class Session(object):
             return -1
     @property
     def trial_runtime(self):
-        if self.trial_on != 0:
+        if self.trial_on != False:
             return now()-self.trial_on
         else:
             return -1
@@ -93,7 +94,9 @@ class Session(object):
             self.ni.write_dio(LINE_SI_OFF, 1)
             self.ni.write_dio(LINE_SI_OFF, 0)
 
-    def wait(self, dur, t0=now()):
+    def wait(self, dur, t0=None):
+        if t0 is None:
+            t0 = now()
         while now()-t0 < dur:
             pass
 
@@ -123,6 +126,12 @@ class Session(object):
                 # deilver trial
                 self.wait(self.intro)
                 cs_time,us_time = self.send_stim(kind)
+                
+                # replay
+                self.wait(self.display_lag)
+                self.past_flag = [cs_time[1], us_time[1]]
+                
+                # finish trial
                 self.wait(self.trial_duration, t0=self.trial_on)
                 self.trial_off = now()
 
@@ -140,6 +149,8 @@ class Session(object):
                 idx     = self.trial_idx,\
                 )
                 self.saver.write('trials',trial_dict)
+                
+                self.trial_on = False
     
     def dummy_puff(self):
         self.ni.write_dio(LINE_US, 1)
@@ -212,6 +223,7 @@ class Session(object):
         
             # main loop
             threading.Thread(target=self.deliver_trial).start()
+            threading.Thread(target=self.update_eyelid).start()
             while True:
 
                 if self.trial_on or self.paused:
@@ -232,16 +244,18 @@ class Session(object):
             logging.error('Session has encountered an error!')
             raise
     def determine_eyelid(self):
-        imts,im = self.cam.get()
-        if im is None:
-            return
-        self.im = im
-        roi_data = self.extract(self.im)
-        self.eyelid_buffer = np.roll(self.eyelid_buffer, -1)
-        self.eyelid_buffer_ts = np.roll(self.eyelid_buffer_ts, -1)
-        self.eyelid_buffer[-1] = roi_data
-        self.eyelid_buffer_ts[-1] = imts
         return np.mean(self.eyelid_buffer[-self.eyelid_window:]) < self.eyelid_thresh
+    def update_eyelid(self):
+        while self.on:
+            imts,im = self.cam.get()
+            if im is None:
+                continue
+            self.im = im
+            roi_data = self.extract(self.im)
+            self.eyelid_buffer = np.roll(self.eyelid_buffer, -1)
+            self.eyelid_buffer_ts = np.roll(self.eyelid_buffer_ts, -1)
+            self.eyelid_buffer[-1] = roi_data
+            self.eyelid_buffer_ts[-1] = imts
     def extract(self, fr):
         if fr is None:
             return 0

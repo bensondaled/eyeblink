@@ -75,11 +75,8 @@ class Saver(mp.Process):
                 logging.info('Saver final flush: {} items remain.'.format(self.buf.qsize()))
             
             source,data,ts,ts2,columns = record
-            if isinstance(data, np.ndarray) and data.ndim==2:
-                self.f.close()
-                with h5py.File(self.data_file) as h:
-                    h.create_dataset(source, data=data)
-                self.f = pd.HDFStore(self.data_file, mode='a')
+            if isinstance(data, np.ndarray) and data.ndim==2 and source=='mask':
+                self.f.put(source, pd.DataFrame(data))
                 continue
             elif not isinstance(data, pd.DataFrame):
                 data = pd.DataFrame(data, columns=columns, index=[ts])

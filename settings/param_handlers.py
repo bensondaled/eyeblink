@@ -24,12 +24,13 @@ class ParamHandler(object):
         intro                       = 3.0,
         min_iti                     = 1.0,
         cycle                       = 6*[CSUS] + [US] + 6*[CSUS] + [CS] + 3*[CSUS] + [US] + 3*[CSUS],
+        display_lag                 = 1., #second
         
         # cam parameters
         cam_params                  = default_cam_params,
         
         # eyelid parameters
-        eyelid_buffer_size          = 100,
+        eyelid_buffer_size          = 130,
         eyelid_window               = 10,
         eyelid_thresh               = -1,
 

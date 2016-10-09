@@ -16,7 +16,7 @@ class View(wx.Frame):
         self.Center()
         
         self.n_live_show = [1200,90]
-        self.n_past_show = 50
+        self.n_past_show = 80
         
         # Leftmost panel
         self.panel_left_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -64,6 +64,10 @@ class View(wx.Frame):
         self.puff_but = wx.Button(self.panel_top2, label='PUFF')
         self.roi_lab = wx.StaticText(self.panel_top2, label='Select ROI: ', style=wx.ALIGN_RIGHT)
         self.roi_but = wx.Button(self.panel_top2, label='BEGIN')
+        self.slider_lab = wx.StaticText(self.panel_top2, label='Thresh: ', style=wx.ALIGN_RIGHT)
+        self.slider = wx.Slider(self.panel_top2, -1, 0, 0, 100,size=(255, -1),style=wx.SL_HORIZONTAL|wx.SL_AUTOTICKS )
+        self.slider.SetRange(0,255)
+        self.slider.SetValue(1)
         self.panel_top2_sizer.Add(self.light_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top2_sizer.Add(self.lighton_but, proportion=1)
         self.panel_top2_sizer.Add(self.lightoff_but, proportion=1)
@@ -71,6 +75,8 @@ class View(wx.Frame):
         self.panel_top2_sizer.Add(self.puff_but, proportion=1)
         self.panel_top2_sizer.Add(self.roi_lab, flag=wx.ALIGN_RIGHT, proportion=1)
         self.panel_top2_sizer.Add(self.roi_but, proportion=1)
+        self.panel_top2_sizer.Add(self.slider_lab, flag=wx.ALIGN_RIGHT, proportion=1)
+        self.panel_top2_sizer.Add(self.slider, proportion=1)
         self.panel_top2.SetSizerAndFit(self.panel_top2_sizer)
 
         # bottom panel
@@ -115,6 +121,7 @@ class View(wx.Frame):
         self.panel_live_sizer.Add(self.canvas_live, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_live.SetSizerAndFit(self.panel_live_sizer)
         
+        
         # movie panel
         self.panel_mov = MoviePanel(self)
         
@@ -150,7 +157,7 @@ class View(wx.Frame):
         self.sizer_l.Add(self.panel_interactive, flag=wx.EXPAND, proportion=1)
         self.sizer_l.Add(self.panel_live, flag=wx.EXPAND, proportion=1)
         self.sizer_r.Add(self.panel_mov, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
-        self.sizer_r.Add(self.panel_trial, flag=wx.EXPAND, proportion=1)
+        self.sizer_r.Add(self.panel_past, flag=wx.EXPAND, proportion=1)
 
         self.sizer_h.Add(self.sizer_l, flag=wx.EXPAND, proportion=1)
         self.sizer_h.Add(self.sizer_r, flag=wx.EXPAND, proportion=1)
@@ -168,6 +175,8 @@ class View(wx.Frame):
 
         self.SetSizer(self.sizer_global)
 
+        self.setup_axlive()
+        
         self.Show()
         self.Layout()
     def update_sub_choices(self):
@@ -183,6 +192,10 @@ class View(wx.Frame):
         self.sub_names += s
         self.sub_names = sorted(self.sub_names)
         self.update_sub_choices()
+    def update_thresh(self, val=None):
+        val = val or self.slider.GetValue()
+        self.thresh_handle.set_ydata(val*np.ones(self.n_live_show[1]))
+        self.ax_live2.figure.canvas.draw()
     def setup_axlive(self):
         self.ax_live.clear()
         self.live_data_handles = [ax.plot(np.zeros(n))[0] for ax,n in zip([self.ax_live,self.ax_live2], self.n_live_show)]
@@ -190,8 +203,12 @@ class View(wx.Frame):
         self.ax_live.set_xlim([0,self.n_live_show[0]])
         self.ax_live2.set_ylim([-.9,256])
         self.ax_live2.set_xlim([0,self.n_live_show[1]])
+        self.thresh_handle, = self.ax_live2.plot(np.ones(self.n_live_show[1]), 'k--')
         
-        self.past_data, = self.ax_past.plot(np.zeros(self.n_past_show))
+        self.ax_past.set_ylim([-1,256])
+        self.past_data, = self.ax_past.plot(np.zeros(self.n_past_show), 'b-')
+        self.pastv1, = self.ax_past.plot([0,0], [0,255], 'k--')
+        self.pastv2, = self.ax_past.plot([5,5], [0,255], 'm--')
     def set_live_data(self, *args):
         for i,data,line in zip(np.arange(len(args)),args,self.live_data_handles):
             y = np.squeeze(data[1])
@@ -199,11 +216,14 @@ class View(wx.Frame):
             if data[0] is not None:
                 line.set_xdata(data[0][-self.n_live_show[i]:])
         self.fig_live.canvas.draw()
-    def set_past_data(self, datax, datay):
+    def set_past_data(self, datax, datay, vline1, vline2):
+        
         self.past_data.set_ydata(datay[-self.n_past_show:])
         self.past_data.set_xdata(datax[-self.n_past_show:])
-        self.ax_past.set_xlim([np.min(datax), np.max(datax)])
-        self.ax_past.set_ylim([np.min(datay), np.max(datay)])
+        self.ax_past.set_xlim([np.min(datax)-1, np.max(datax)+1])
+        #self.ax_past.set_ylim([np.min(datay), np.max(datay)])
+        self.pastv1.set_xdata([vline1,vline1])
+        self.pastv2.set_xdata([vline2,vline2])
         self.fig_past.canvas.draw()
 
 class MoviePanel(wx.Panel):

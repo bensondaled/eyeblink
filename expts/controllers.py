@@ -52,6 +52,7 @@ class Controller:
         self.view.add_sub_button.Bind(wx.EVT_BUTTON, self.evt_addsub)
         self.view.resetcam_button.Bind(wx.EVT_BUTTON, self.evt_resetcam)
         self.view.usrinput_box.Bind(wx.EVT_TEXT_ENTER, self.update_usrinput)
+        self.view.slider.Bind(wx.EVT_COMMAND_SCROLL_THUMBTRACK, self.on_slide)
         self.view.ax_interactive.figure.canvas.mpl_connect('button_press_event', self.evt_interactive_click)
 
         # Runtime
@@ -142,6 +143,12 @@ class Controller:
         # trial
         if new_trial_flag:
             self.update_trial()
+            
+        # past
+        if self.session.past_flag != False:
+            cs,us = self.session.past_flag
+            self.session.past_flag = False
+            self.view.set_past_data(self.session.eyelid_buffer_ts,self.session.eyelid_buffer,cs,us)
 
         # pauses
         if self.session.paused:
@@ -161,8 +168,7 @@ class Controller:
         if self.session.trial_idx < 0:
             return
         self.view.trial_n_widg.SetValue("%s"%(str(self.session.trial_idx)))
-        self.view.trial_type_widg.SetValue(self.session.trial.current.stim.state)
-        self.view.set_past_data(self.session.eyelid_buffer_ts,self.session.eyelid_buffer)
+        self.view.trial_type_widg.SetValue(self.session.current_stim_state)
 
     ####### EVENTS ########
     def evt_prepare(self, evt):
@@ -203,7 +209,7 @@ class Controller:
                     else:
                         cont = False
 
-            self.view.setup_axlive()
+            #self.view.setup_axlive()
             self.view.SetTitle('Subject {}'.format(sub_name))
 
             self.update_state(self.STATE_PREPARED)
@@ -290,7 +296,7 @@ class Controller:
             
         if not self.selecting:
             self.view.roi_but.SetLabel('DONE')
-            im = self.session.cam.get()
+            _,im = self.session.cam.get()
             self.view.ax_interactive.imshow(im, cmap=pl.cm.Greys_r)
             self.view.ax_interactive.axis([0,im.shape[1],0,im.shape[0]])
             self.view.ax_interactive.figure.canvas.draw()
@@ -312,3 +318,7 @@ class Controller:
             self.view.ax_interactive.plot(event.xdata,event.ydata,'rx')
             self.view.ax_interactive.axis(lims)
             self.view.ax_interactive.figure.canvas.draw()
+    def on_slide(self, evt):
+        if self.state in [self.STATE_PREPARED, self.STATE_RUNNING]:
+            self.session.eyelid_thresh = self.view.slider.GetValue()
+        self.view.update_thresh()

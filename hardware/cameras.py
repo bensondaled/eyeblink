@@ -214,7 +214,7 @@ class PSEye():
 
     def get(self):
         if now()-self.last_query < 1./self.query_rate:
-            return None
+            return None,None
         self.last_query = now()
         self.saver.query_flag.value = True
         fr = mp2np(self.saver.query_queue)
@@ -401,8 +401,10 @@ default_cam_params = dict(  idx=(0,1),
                             frame_rate=(60,60), 
                             color_mode=(_PSEye.GREYSCALE,_PSEye.GREYSCALE),
                             cleye_params = ( dict(
-                                                    auto_gain = True,
-                                                    auto_exposure = True,
+                                                    auto_gain = False,
+                                                    auto_exposure = False,
+                                                    gain = 10,
+                                                    exposure=100,
                                                     auto_whitebalance = True,
                                                     vflip = True,
                                                     hflip = True,
