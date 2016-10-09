@@ -140,6 +140,7 @@ class Controller:
         cam_frame = self.session.im
         #self.view.panel_mov.set_frame(cam_frame)
         self.mov_im.set_data(cam_frame)
+        self.view.ax_interactive.figure.canvas.draw()
         
         # trial
         if new_trial_flag:
@@ -215,6 +216,7 @@ class Controller:
             
             _,im = self.session.cam.get()
             self.view.ax_interactive.clear()
+            self.view.ax_interactive.axis('off')
             self.mov_im = self.view.ax_interactive.imshow(im, cmap=pl.cm.Greys_r)
 
             self.update_state(self.STATE_PREPARED)
@@ -301,9 +303,8 @@ class Controller:
             
         if not self.selecting:
             self.view.roi_but.SetLabel('DONE')
-            _,im = self.session.cam.get()
-            self.view.ax_interactive.clear()
-            self.view.ax_interactive.imshow(im, cmap=pl.cm.Greys_r)
+            im = self.session.im
+            self.mov_im.set_data(im)
             self.view.ax_interactive.axis([0,im.shape[1],0,im.shape[0]])
             self.view.ax_interactive.figure.canvas.draw()
             logging.info('Select ROI now, and press DONE to stop.')

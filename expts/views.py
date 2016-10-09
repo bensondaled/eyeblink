@@ -16,7 +16,7 @@ class View(wx.Frame):
         self.Center()
         
         self.n_live_show = [1200,90]
-        self.n_past_show = 80
+        self.n_past_show = 40
         
         # Leftmost panel
         self.panel_left_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -107,6 +107,7 @@ class View(wx.Frame):
         self.panel_interactive_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.fig = Figure( figsize=(7.5, 4), dpi=80 )
         self.ax_interactive = self.fig.add_subplot(111)
+        self.ax_interactive.axis('off')
         self.canvas = FigureCanvasWxAgg(self.panel_interactive, -1, self.fig)
         self.panel_interactive_sizer.Add(self.canvas, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_interactive.SetSizerAndFit(self.panel_interactive_sizer)
@@ -123,7 +124,7 @@ class View(wx.Frame):
         
         
         # movie panel
-        self.panel_mov = MoviePanel(self)
+        #self.panel_mov = MoviePanel(self)
         
         # past data
         self.panel_past = wx.Panel(self,5)
@@ -156,7 +157,7 @@ class View(wx.Frame):
 
         self.sizer_l.Add(self.panel_interactive, flag=wx.EXPAND, proportion=1)
         self.sizer_l.Add(self.panel_live, flag=wx.EXPAND, proportion=1)
-        self.sizer_r.Add(self.panel_mov, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
+        #self.sizer_r.Add(self.panel_mov, flag=wx.ALIGN_CENTER_HORIZONTAL) #proportion=1)
         self.sizer_r.Add(self.panel_past, flag=wx.EXPAND, proportion=1)
 
         self.sizer_h.Add(self.sizer_l, flag=wx.EXPAND, proportion=1)
@@ -217,13 +218,13 @@ class View(wx.Frame):
                 line.set_xdata(data[0][-self.n_live_show[i]:])
         self.fig_live.canvas.draw()
     def set_past_data(self, datax, datay, vline1, vline2):
-        
         self.past_data.set_ydata(datay[-self.n_past_show:])
-        self.past_data.set_xdata(datax[-self.n_past_show:])
-        self.ax_past.set_xlim([np.min(datax)-1, np.max(datax)+1])
+        datax = datax[-self.n_past_show:]
+        self.past_data.set_xdata(datax)
         #self.ax_past.set_ylim([np.min(datay), np.max(datay)])
         self.pastv1.set_xdata([vline1,vline1])
         self.pastv2.set_xdata([vline2,vline2])
+        self.ax_past.set_xlim([np.min(datax), np.max(datax)])
         self.fig_past.canvas.draw()
 
 class MoviePanel(wx.Panel):

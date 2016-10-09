@@ -208,7 +208,7 @@ class PSEye():
         self.flushing = mp.Value('b', False)
 
         self.saver = MovieSaver(name=self.save_name, resolution=self.resolution, kill_flag=self.kill_flag, frame_buffer=self.frame_buffer, flushing=self.flushing, n_cams=self.n_cams, query_idx=self.query_idx)
-        self.pseye = _PSEye(idx=self.idx, resolution_mode=self.resolution_mode, frame_rate=self.frame_rate, color_mode=self.color_mode, frame_buffer=self.frame_buffer, kill_flag=self.kill_flag, saving_flag=self.saving, sync_flag=sync_flag, cleye_params=self.cleye_params)
+        self.pseye = _PSEye(idx=self.idx, resolution_mode=self.resolution_mode, frame_rate=self.frame_rate, color_mode=self.color_mode, frame_buffer=self.frame_buffer, kill_flag=self.kill_flag, saving_flag=self.saving, sync_flag=sync_flag, query_idx=self.query_idx, cleye_params=self.cleye_params)
 
         self.last_query = now()            
 
@@ -311,19 +311,20 @@ class _PSEye(mp.Process):
             got = self.dll.CLEyeCameraGetFrame(self._cams[idx], self._bufs[idx], timeout)
             if got: # this is actually useless, since API apparently returns strange values even in failed cases
                 ts,ts2 = now(),now2()
+                
                 fr = np.frombuffer(self._bufs[idx], dtype=np.uint8).copy()
                 self.frame_buffer[idx].put([[ts,ts2],fr,self.saving_flag.value])
 
-                # queries: currently experimental
-                if self.query.value:
-                    self.query_queue_ts = ts2
+                # queries: tested, does not modify frame rate when 2 cams are running at 60hz
+                if self.query_flag.value == True and idx==self.query_idx:
+                    self.query_queue_ts.value = ts2
                     self.query_queue[0] = fr
                     self.query_flag.value = False
-
+                
         self.callbacks_running[idx] = False
     
     def run(self):
-        
+
         # Sync with parent process, if applicable
         # Waits for flag to be set, then reports current clock value
         while (not self.sync_flag is None) and (not self.sync_flag.value):
@@ -428,17 +429,26 @@ default_cam_params = dict(  idx=(0,1),
                             cleye_params = ( dict(
                                                     auto_gain = False,
                                                     auto_exposure = False,
-                                                    gain = 10,
-                                                    exposure=100,
-                                                    auto_whitebalance = True,
+                                                    gain = 1,
+                                                    exposure = 10,
+                                                    whitebalance_red=120,
+                                                    whitebalance_blue=120,
+                                                    whitebalance_green=120,
+                                                    auto_whitebalance = False,
                                                     vflip = True,
                                                     hflip = True,
                                                     rotation = False#-500,
                                                     ),
                                             dict(
-                                                    auto_gain = True,
-                                                    auto_exposure = True,
-                                                    auto_whitebalance = True,
+                                                    auto_gain = False,
+                                                    auto_exposure = False,
+                                                    auto_whitebalance = False,
+                                                    gain = 1,
+                                                    exposure = 10,
+                                                    whitebalance_red=120,
+                                                    whitebalance_blue=120,
+                                                    whitebalance_green=120,
+                                                    
                                                     vflip = True,
                                                     hflip = True,
                                                     rotation = False#-500,

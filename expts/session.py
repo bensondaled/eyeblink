@@ -26,7 +26,6 @@ class Session(object):
         # hardware
         self.cam = PSEye(sync_flag=self.sync_flag, **self.cam_params)
         self.ar = AnalogReader(saver_obj_buffer=self.saver.buf, sync_flag=self.sync_flag, **self.ar_params)
-
         # communication
         self.ni = NI845x(i2c_on=self.imaging)
 
@@ -46,7 +45,6 @@ class Session(object):
         self.trial_idx = -1
         self.stim_cycle_idx = 0
         self.paused = False
-        _,self.im = self.cam.get()
         self.roi_pts = None
         self.eyelid_buffer = np.zeros(self.eyelid_buffer_size)-1
         self.eyelid_buffer_ts = np.zeros(self.eyelid_buffer_size)-1
@@ -59,6 +57,10 @@ class Session(object):
         sync_vals = {o:procs[o].sync_val.value for o in procs} #collect all process times
         sync_vals['session'] = self.sync_val
         self.sync_to_save.put(sync_vals)
+        
+        # more runtime, anything that must occur after sync
+        _,self.im = self.cam.get()
+        
 
     @property
     def session_runtime(self):
@@ -82,6 +84,11 @@ class Session(object):
 
     def pause(self, val):
         self.paused = val
+        if self.imaging:
+            if val == True:
+                self.stop_acq()
+            elif val == False:
+                self.start_acq()
 
     def update_licked(self):
         l = self.ar.licked
@@ -213,7 +220,7 @@ class Session(object):
         
     def run(self):
         try:
-
+            self.acquire_mask()
             self.session_on = now()
             self.on = True
             self.ar.begin_saving()
