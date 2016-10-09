@@ -138,7 +138,8 @@ class Controller:
 
         # movie
         cam_frame = self.session.im
-        self.view.panel_mov.set_frame(cam_frame)
+        #self.view.panel_mov.set_frame(cam_frame)
+        self.mov_im.set_data(cam_frame)
         
         # trial
         if new_trial_flag:
@@ -211,6 +212,10 @@ class Controller:
 
             #self.view.setup_axlive()
             self.view.SetTitle('Subject {}'.format(sub_name))
+            
+            _,im = self.session.cam.get()
+            self.view.ax_interactive.clear()
+            self.mov_im = self.view.ax_interactive.imshow(im, cmap=pl.cm.Greys_r)
 
             self.update_state(self.STATE_PREPARED)
             self.update()
@@ -290,13 +295,14 @@ class Controller:
         self.session.notes = self.view.usrinput_box.GetValue()
         logging.info('Metadata updated.')
     def evt_roi(self, evt):
-        if self.state != self.STATE_PREPARED:
-            logging.info('Only pre-run ROI selection currently implemented.')
+        if self.state not in [self.STATE_PREPARED, self.STATE_RUNNING]:
+            logging.info('No session for ROI selection.')
             return
             
         if not self.selecting:
             self.view.roi_but.SetLabel('DONE')
             _,im = self.session.cam.get()
+            self.view.ax_interactive.clear()
             self.view.ax_interactive.imshow(im, cmap=pl.cm.Greys_r)
             self.view.ax_interactive.axis([0,im.shape[1],0,im.shape[0]])
             self.view.ax_interactive.figure.canvas.draw()
@@ -304,7 +310,7 @@ class Controller:
             self.selecting = True
         elif self.selecting:
             self.session.roi_pts = np.copy(self.selection_pts)
-            logging.info('ROI Set.')
+            self.session.acquire_mask()
             self.view.roi_but.SetLabel('BEGIN')
             self.selection_pts = []
             self.selecting = False

@@ -216,9 +216,19 @@ class PSEye():
         if now()-self.last_query < 1./self.query_rate:
             return None,None
         self.last_query = now()
-        self.saver.query_flag.value = True
-        fr = mp2np(self.saver.query_queue)
-        frts = self.saver.query_queue_ts.value
+
+        # query from saver:
+        #self.saver.query_flag.value = True
+        #fr = mp2np(self.saver.query_queue)
+        #frts = self.saver.query_queue_ts.value
+        
+        # query from _PSEye
+        self.pseye.query_flag.value = True
+        while self.pseye.query_flag.value == True:
+            pass
+        fr = self.pseye.query_queue[0]
+        frts = self.pseye.query_queue_ts.value
+
         x,y = self.resolution[self.query_idx]
         return frts,fr.reshape([y,x])
 
@@ -249,7 +259,7 @@ class _PSEye(mp.Process):
     GREYSCALE = CLEYE_CODES['greyscale']
     BYTES_PER_PIXEL = {COLOUR:4, GREYSCALE:1}
 
-    def __init__(self, idx, resolution_mode, frame_rate, color_mode, sync_flag=None, frame_buffer=None, kill_flag=None, saving_flag=None, cleye_params={}):
+    def __init__(self, idx, resolution_mode, frame_rate, color_mode, sync_flag=None, frame_buffer=None, kill_flag=None, saving_flag=None, cleye_params={}, query_idx=0):
 
         # Process init
         super(_PSEye, self).__init__()
@@ -279,6 +289,14 @@ class _PSEye(mp.Process):
         # Runtime flags
         self.thread_complete = mp.Value('b',False)
         self.reset_cams_flag = mp.Value('b', False)
+        
+        # Queries (note that I had also implemented this for the saver. these are independent things in each class, parent will use one or the other)
+        self.query_idx = query_idx #which cam gets queried
+        self.query_flag = mp.Value('b',False)
+        manager = mp.Manager()
+        self.query_queue = manager.list()
+        self.query_queue.append(0) # dummy entry
+        self.query_queue_ts = mp.Value('d',0.)
 
         # Sync
         self.sync_flag = sync_flag
@@ -295,6 +313,13 @@ class _PSEye(mp.Process):
                 ts,ts2 = now(),now2()
                 fr = np.frombuffer(self._bufs[idx], dtype=np.uint8).copy()
                 self.frame_buffer[idx].put([[ts,ts2],fr,self.saving_flag.value])
+
+                # queries: currently experimental
+                if self.query.value:
+                    self.query_queue_ts = ts2
+                    self.query_queue[0] = fr
+                    self.query_flag.value = False
+
         self.callbacks_running[idx] = False
     
     def run(self):

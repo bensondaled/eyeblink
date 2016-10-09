@@ -35,6 +35,7 @@ class Session(object):
         
         # runtime variables
         self.notes = {}
+        self.mask_idx = -1 #for reselecting mask
         self.session_on = 0
         self.on = False
         self.session_complete = False
@@ -118,7 +119,6 @@ class Session(object):
 
                 # prepare trial
                 self.trial_idx += 1
-                self.trial_flag = False
                 self.trial_on = now()
                 self.cam.set_flush(False)
                 kind = self.next_stim_type()
@@ -150,6 +150,7 @@ class Session(object):
                 )
                 self.saver.write('trials',trial_dict)
                 
+                self.trial_flag = False
                 self.trial_on = False
     
     def dummy_puff(self):
@@ -201,19 +202,18 @@ class Session(object):
         if self.roi_pts is None:
             self.roi_pts = [[0,0],[x,0],[x,y],[0,y]]
             logging.warning('No ROI found, using default')
+        self.mask_idx += 1
         pts_eye = np.array(self.roi_pts, dtype=np.int32)
         mask_eye = np.zeros([y,x], dtype=np.int32)
         cv2.fillConvexPoly(mask_eye, pts_eye, (1,1,1), lineType=cv2.LINE_AA)
         self.mask = mask_eye
         self.mask_flat = self.mask.reshape((1,-1))
-        self.saver.write('mask', self.mask)
+        self.saver.write('mask{}'.format(self.mask_idx), self.mask)
+        logging.info('New mask set.')
         
     def run(self):
         try:
 
-            # get selections
-            self.acquire_mask()
-            
             self.session_on = now()
             self.on = True
             self.ar.begin_saving()
