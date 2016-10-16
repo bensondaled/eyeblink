@@ -4,7 +4,7 @@
 #SBATCH -n 10                      # number of cores
 #SBATCH -t 360                 # time (minutes)
 #SBATCH -o /jukebox/wang/deverett/logs/%A.%a.out        # STDOUT
-#SBATCH --mem=10000      #in MB
+#SBATCH --mem=90000      #in MB
 
 . activate py2
 
