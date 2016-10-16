@@ -17,15 +17,19 @@ def safe_input(prompt):
 
 
 if __name__ == '__main__':
-    tcpip = TCPIP(tcpip_address)
+    imaging = safe_input('Imaging? (y/n) ')
+    imaging = imaging=='y'
+    if imaging:
+        tcpip = TCPIP(tcpip_address)
     cont = True
     while cont != 'q':
         animal = safe_input('Enter animal name: ')
         exp_name = time.strftime('%Y%m%d%H%M%S')
-        si_dict = dict(path=si_data_path+r'\\{}'.format(animal), name=exp_name, idx=1)
-        tcpip.send(si_dict)
-        exp = Experiment(name=exp_name, animal=animal)
+        if imaging:
+            si_dict = dict(path=si_data_path+r'\\{}'.format(animal), name=exp_name, idx=1)
+            tcpip.send(si_dict)
+        exp = Experiment(name=exp_name, animal=animal, imaging=imaging)
         exp.run()
         cont = raw_input('Continue? (q to quit)')
-
-    tcpip.end()
+    if imaging:
+        tcpip.end()
