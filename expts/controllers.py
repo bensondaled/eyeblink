@@ -48,6 +48,7 @@ class Controller:
         self.view.lighton_but.Bind(wx.EVT_BUTTON, lambda evt, temp=1: self.set_light(evt, temp))
         self.view.lightoff_but.Bind(wx.EVT_BUTTON, lambda evt, temp=0: self.set_light(evt, temp))
         self.view.puff_but.Bind(wx.EVT_BUTTON, self.evt_puff)
+        self.view.deliver_but.Bind(wx.EVT_BUTTON, self.evt_deliver)
         self.view.roi_but.Bind(wx.EVT_BUTTON, self.evt_roi)
         self.view.add_sub_button.Bind(wx.EVT_BUTTON, self.evt_addsub)
         self.view.resetcam_button.Bind(wx.EVT_BUTTON, self.evt_resetcam)
@@ -293,6 +294,12 @@ class Controller:
             self.session.dummy_puff()
         else:
             dummy_puff()
+    def evt_deliver(self, evt):
+        if self.state in [self.STATE_RUNNING]:
+            self.session.deliver_override = True
+            logging.info('Manual trial delivering.')
+        else:
+            logging.info('No session running to deliver trial.')
     def update_usrinput(self, evt):
         self.session.notes = self.view.usrinput_box.GetValue()
         logging.info('Metadata updated.')
@@ -312,7 +319,7 @@ class Controller:
         elif self.selecting:
             self.session.roi_pts = np.copy(self.selection_pts)
             self.session.acquire_mask()
-            self.view.roi_but.SetLabel('BEGIN')
+            self.view.roi_but.SetLabel('ROI')
             self.selection_pts = []
             self.selecting = False
     def evt_resetcam(self, evt):

@@ -45,6 +45,7 @@ class Session(object):
         self.trial_idx = -1
         self.stim_cycle_idx = 0
         self.paused = False
+        self.deliver_override = False
         self.roi_pts = None
         self.eyelid_buffer = np.zeros(self.eyelid_buffer_size)-1
         self.eyelid_buffer_ts = np.zeros(self.eyelid_buffer_size)-1
@@ -242,8 +243,9 @@ class Session(object):
                 moving = self.determine_motion()
                 eyelid = self.determine_eyelid()
                 
-                if (now()-self.trial_off>self.min_iti) and (not moving) and (eyelid):
+                if self.deliver_override or ((now()-self.trial_off>self.min_iti) and (not moving) and (eyelid)):
                     self.trial_flag = True
+                    self.deliver_override = False
 
             self.end()
 

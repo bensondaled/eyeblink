@@ -14,7 +14,7 @@ class ParamHandler(object):
         name                        = None,
 
         # hardware parameters
-        ar_params                   = dict(ports=['ai0'], portnames=['hall'], runtime_ports=[0]),
+        ar_params                   = dict(ports=['ai7'], portnames=['beam'], runtime_ports=[0]),
 
         # trial parameters
         trial_duration              = 8.0,
