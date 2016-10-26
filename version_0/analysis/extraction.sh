@@ -8,4 +8,4 @@
 
 . activate py2
 
-xvfb-run --auto-servernum --server-num=1 python analysis.py $SLURM_ARRAY_TASK_ID
+xvfb-run --auto-servernum --server-num=1 python extraction.py $SLURM_ARRAY_TASK_ID
