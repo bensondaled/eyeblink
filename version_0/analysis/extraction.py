@@ -3,8 +3,10 @@ import matplotlib.pyplot as pl
 pl.ioff()
 import os, h5py, sys
 
-path = '/jukebox/wang/deverett/2p/eyeblink/b37/'
-seshs = sorted([os.path.splitext(i)[0] for i in os.listdir(path) if 'cam' not in i and 'data' not in i and 'series' not in i and 'fig' not in i])
+path = '/jukebox/wang/deverett/2p/eyeblink/b35/'
+path = '/jukebox/wang/agiovann/eyeblink2016/b35/'
+seshs = ['20160705103903']
+#seshs = sorted([os.path.splitext(i)[0] for i in os.listdir(path) if 'cam' not in i and 'data' not in i and 'series' not in i and 'fig' not in i])
 
 jobid = int(sys.argv[1])
 if jobid >= len(seshs):
@@ -30,7 +32,7 @@ d = pf.Data(img_path)
 pad_img = (pad/d.Ts).astype(int)
 
 if not d._has_motion_correction:
-    print 'motion correction available for {}'.format(sesh)
+    print 'motion correction not available for {}'.format(sesh)
     sys.exit(0)
 
 with h5py.File(md_path) as md:

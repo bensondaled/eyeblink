@@ -15,7 +15,7 @@ class AnalogReader(mp.Process):
     READ_BUF_SIZE = 10
     ACCUM_SIZE = 2000 # Must be multiple of READ_BUF_SIZE
 
-    def __init__(self, ports=['ai0'], portnames=['hall'], runtime_ports=[0], movement_port=0, movement_window=1.0, movement_thresh=3., daq_sample_rate=500., save_buffer_size=8000, saver_obj_buffer=None, sync_flag=None, **daq_kwargs):
+    def __init__(self, ports=['ai0'], portnames=['hall'], runtime_ports=[0], movement_port=0, movement_window=1.0, movement_thresh=3., movement_magnitude=.5, daq_sample_rate=500., save_buffer_size=8000, saver_obj_buffer=None, sync_flag=None, **daq_kwargs):
         super(AnalogReader, self).__init__()
         self.daq_kwargs = daq_kwargs
         
@@ -33,6 +33,7 @@ class AnalogReader(mp.Process):
         # Data processing parameters
         self.movement_window = int(movement_window * self.daq_sample_rate) # movement_window
         self.movement_thresh = movement_thresh
+        self.movement_magnitude = movement_magnitude
 
         # data containers
         self.accum = np.zeros((len(self.ports),self.ACCUM_SIZE))
@@ -113,7 +114,8 @@ class AnalogReader(mp.Process):
             with self.logic_lock:
                 
                 _tmp_moving = self.accum[self.runtime_ports[self.movement_port], -self.movement_window:]
-                self.moving_.value = np.max(_tmp_moving)-np.min(_tmp_moving) > self.movement_thresh
+                nevents = np.sum(np.abs(np.diff(_tmp_moving)) >= self.movement_magnitude) 
+                self.moving_.value = nevents > self.movement_thresh
 
             if dump and self._saving.value:
                 if self.n_added_to_save_buffer > self.save_buffer_size:
