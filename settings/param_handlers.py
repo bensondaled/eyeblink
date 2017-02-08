@@ -14,7 +14,7 @@ class ParamHandler(object):
         name                        = None,
 
         # hardware parameters
-        daq_params                   = dict(ports=['port0/line0','port0/line1']),
+        daq_params                   = dict(ports=['port0/line0','port0/line1'], port_names=['light','puff']),
 
         # trial parameters
         trial_duration              = 8.0,

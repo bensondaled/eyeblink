@@ -3,7 +3,6 @@ import multiprocessing as mp
 import numpy as np
 import pandas as pd
 from util import now,now2
-import config
 from routines import add_to_saver_buffer
 
 class Saver(mp.Process):

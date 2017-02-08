@@ -21,7 +21,7 @@ class Trigger(object):
 
 class DAQOut(pydaq.Task):
     DIGITAL_OUT = 1
-    def __init__(self, device='Dev1', ports=[], timeout=5.0, saver=None):
+    def __init__(self, device='Dev1', ports=[], port_names=[], timeout=5.0, saver=None):
         
         # DAQ properties
         pydaq.Task.__init__(self)
@@ -29,6 +29,7 @@ class DAQOut(pydaq.Task):
         self.ports = ports
         self.timeout = timeout
         self.ports = ['/'.join([self.device,port]) for port in self.ports]
+        self.port_dict = {pn:idx for idx,pn in enumerate(port_names)}
 
         # Saving
         self.saver = saver
@@ -45,13 +46,13 @@ class DAQOut(pydaq.Task):
             warnings.warn("DAQ task did not successfully initialize")
             raise
 
-    def go(self, port_idx, value):
-        self.msg[port_idx] = value
+    def go(self, port_name, value):
+        self.msg[self.port_dict[port_name]] = value
 
         try:
             self.WriteDigitalLines(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,self.msg.msg,None,None)
             if self.saver is not None:
-                self.saver.write('daqout', dict(port=port_idx, value=value))
+                self.saver.write('daqout', dict(port=port_name, value=value))
         except:
             logging.warning("DAQ task not functional. Attempted to write %s."%str(trig.msg))
             raise

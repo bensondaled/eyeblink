@@ -5,10 +5,8 @@ from session import Session
 from views import View
 from subjects import Subject, list_subjects
 from settings.param_handlers import ParamHandler
-from hardware import dummy_light,dummy_puff
 from util import setup_logging
 from util import TCPIP
-import config
 
 def pretty_time(t):
     if t<60:

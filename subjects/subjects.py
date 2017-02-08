@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import os, sys, h5py, time, logging
 pjoin = os.path.join
-import config
 
 def list_subjects():
     subs = [d for d in os.listdir('./data') if os.path.isdir(pjoin('./data',d))]
