@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as pl
 import time, threading, os, logging, json, multiprocessing, cv2
-from hardware import AnalogReader, PSEye, NI845x
+from hardware import PSEye
 from saver import Saver
 from util import now, now2
 from settings.constants import *
@@ -25,9 +25,6 @@ class Session(object):
 
         # hardware
         self.cam = PSEye(sync_flag=self.sync_flag, **self.cam_params)
-        self.ar = AnalogReader(saver_obj_buffer=self.saver.buf, sync_flag=self.sync_flag, **self.ar_params)
-        # communication
-        self.ni = NI845x(i2c_on=self.imaging)
 
         # interactivity
         self.ax_interactive = ax_interactive
@@ -54,7 +51,7 @@ class Session(object):
         # sync
         self.sync_flag.value = True #trigger all processes to get time
         self.sync_val = now() #get this process's time
-        procs = dict(saver=self.saver, cam=self.cam.pseye, ar=self.ar)
+        procs = dict(saver=self.saver, cam=self.cam.pseye)
         sync_vals = {o:procs[o].sync_val.value for o in procs} #collect all process times
         sync_vals['session'] = self.sync_val
         self.sync_to_save.put(sync_vals)
@@ -85,23 +82,9 @@ class Session(object):
 
     def pause(self, val):
         self.paused = val
-        if self.imaging:
-            if val == True:
-                self.stop_acq()
-            elif val == False:
-                self.start_acq()
 
     def update_licked(self):
         l = self.ar.licked
-
-    def start_acq(self):
-        if self.imaging:
-            self.ni.write_dio(LINE_SI_ON, 1)
-            self.ni.write_dio(LINE_SI_ON, 0)
-    def stop_acq(self):
-        if self.imaging:
-            self.ni.write_dio(LINE_SI_OFF, 1)
-            self.ni.write_dio(LINE_SI_OFF, 0)
 
     def wait(self, dur, t0=None):
         if t0 is None:
@@ -277,9 +260,7 @@ class Session(object):
     def end(self):
         self.on = False
         self.stop_acq()
-        to_end = [self.ar, self.cam]
-        if self.imaging:
-            to_end.append(self.ni)
+        to_end = [self.cam]
         for te in to_end:
             te.end()
             time.sleep(0.100)

@@ -37,13 +37,10 @@ class Controller:
             sys.stderr=self.view.redir_err
         setup_logging(outwin=self.view.redir_out,errwin=self.view.redir_err)
 
-        self.tcpip = TCPIP(config.scanimage_tcpip_address)
-
         # Button bindings
         self.view.start_button.Bind(wx.EVT_BUTTON, self.evt_onoff)
         self.view.prepare_button.Bind(wx.EVT_BUTTON, self.evt_prepare)
         self.view.pause_button.Bind(wx.EVT_BUTTON, self.evt_pause)
-        self.view.tcpip_button.Bind(wx.EVT_BUTTON, self.evt_tcpip)
         self.view.Bind(wx.EVT_CLOSE, self.evt_close)
         self.view.lighton_but.Bind(wx.EVT_BUTTON, lambda evt, temp=1: self.set_light(evt, temp))
         self.view.lightoff_but.Bind(wx.EVT_BUTTON, lambda evt, temp=0: self.set_light(evt, temp))
@@ -188,29 +185,10 @@ class Controller:
                 return
 
             sub_name = self.view.sub_names[sel_sub]
-            imaging = self.view.imaging_box.GetValue()
 
             sub = Subject(sub_name)
-            ph = ParamHandler(sub, imaging=imaging)
+            ph = ParamHandler(sub)
             self.session = Session(ph.params, ax_interactive=self.view.ax_interactive)
-
-            # tcpip communication
-            if imaging:
-                si_path = config.si_data_path+r'\\{}'.format(sub_name)
-                seshname = self.session.name_as_str()
-                dic = dict(path=si_path, name=seshname, idx=1)
-                cont = True
-                while cont:
-                    suc = self.tcpip.send(dic)
-                    if not suc:
-                        dlg = wx.MessageDialog(self.view, caption='ScanImage preparation failed.', message='Try again?', style=wx.YES_NO)
-                        res = dlg.ShowModal()
-                        dlg.Destroy()
-                        cont = res==wx.ID_YES
-                        if cont:
-                            self.evt_tcpip(None)
-                    else:
-                        cont = False
 
             #self.view.setup_axlive()
             self.view.SetTitle('Subject {}'.format(sub_name))
@@ -223,17 +201,6 @@ class Controller:
             self.update_state(self.STATE_PREPARED)
             self.update()
         
-    def evt_tcpip(self, evt):
-        bi = wx.BusyInfo('Connecting TCPIP; click connect on remote machine...', self.view)
-        suc = self.tcpip.reconnect()
-        bi.Destroy()
-        if not suc:
-            dlg = wx.MessageDialog(self.view, caption='TCPIP reconnection failed.', message='TCPIP not active.', style=wx.OK)
-            res = dlg.ShowModal()
-            dlg.Destroy()
-        else:
-            logging.info('TCPIP connected.')
-
     def evt_onoff(self, evt):
         if self.state != self.STATE_RUNNING:
             self.update_state(self.STATE_RUNNING)
@@ -271,7 +238,6 @@ class Controller:
                     self.update_state(self.STATE_KILLED_SESSION)
                     while self.state != self.STATE_RUN_COMPLETE:
                         pass
-                self.tcpip.end()
                 self.view.Destroy()
             else:
                 evt.Veto()

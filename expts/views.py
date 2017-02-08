@@ -24,8 +24,6 @@ class View(wx.Frame):
         self.sub_box = wx.ListBox(self)
         self.sub_names,self.sub_strs = subs,[]
         self.update_sub_choices()
-        self.imaging_box = wx.CheckBox(self, label='Imaging')
-        self.panel_left_sizer.Add(self.imaging_box)
         self.panel_left_sizer.Add(self.add_sub_button)
         self.panel_left_sizer.Add(self.sub_box, flag=wx.EXPAND|wx.ALL, proportion=1)
 
@@ -91,7 +89,6 @@ class View(wx.Frame):
         self.pause_button = wx.Button(self.panel_bottom, label="Pause")
         self.pause_button.SetBackgroundColour((0,150,150))
         self.prepare_button = wx.Button(self.panel_bottom, label="Prepare Session")
-        self.tcpip_button = wx.Button(self.panel_bottom, label="TCPIP")
         self.resetcam_button = wx.Button(self.panel_bottom, label="Reset Cams")
         self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom_sizer.Add(self.prepare_button, flag=wx.EXPAND|wx.ALL, proportion=1)
@@ -100,7 +97,6 @@ class View(wx.Frame):
         self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom_sizer.Add(self.pause_button, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_bottom_sizer.AddStretchSpacer()
-        self.panel_bottom_sizer.Add(self.tcpip_button, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_bottom_sizer.AddStretchSpacer()
         self.panel_bottom_sizer.Add(self.resetcam_button, flag=wx.EXPAND|wx.ALL, proportion=1)
         self.panel_bottom_sizer.AddStretchSpacer()
