@@ -14,7 +14,7 @@ class ParamHandler(object):
         name                        = None,
 
         # hardware parameters
-        ar_params                   = dict(ports=['ai7'], portnames=['beam'], runtime_ports=[0]),
+        daq_params                   = dict(ports=['port0/line0','port0/line1']),
 
         # trial parameters
         trial_duration              = 8.0,
@@ -36,11 +36,10 @@ class ParamHandler(object):
 
         # Experiment parameters
         subj                        = None,
-        imaging                     = False,
       )
 
 
-    def __init__(self, subj, imaging=False):
+    def __init__(self, subj):
         self.subj = subj
         self.params = self.basics
-        self.params.update(subj=self.subj, imaging=imaging)
+        self.params.update(subj=self.subj)

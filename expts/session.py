@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as pl
 import time, threading, os, logging, json, multiprocessing, cv2
-from hardware import PSEye
+from hardware import PSEye, DAQOut
 from saver import Saver
 from util import now, now2
 from settings.constants import *
@@ -25,6 +25,7 @@ class Session(object):
 
         # hardware
         self.cam = PSEye(sync_flag=self.sync_flag, **self.cam_params)
+        self.ni = DAQOut(**self.daq_params)
 
         # interactivity
         self.ax_interactive = ax_interactive
@@ -260,7 +261,7 @@ class Session(object):
     def end(self):
         self.on = False
         self.stop_acq()
-        to_end = [self.cam]
+        to_end = [self.cam, self.ni]
         for te in to_end:
             te.end()
             time.sleep(0.100)

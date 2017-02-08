@@ -1,9 +1,7 @@
-
 import PyDAQmx as pydaq
 from PyDAQmx.DAQmxCallBack import *
 import numpy as np
-import multiprocessing as mp
-import warnings, threading, logging, copy
+import warnings, logging
 from util import now,now2
 
 class Trigger(object):
@@ -22,58 +20,43 @@ class Trigger(object):
         self._msg = np.array(msg).astype(self.dtype)
 
 class DAQOut(pydaq.Task):
-    ANALOG_OUT = 0
     DIGITAL_OUT = 1
-    def __init__(self, mode, device='Dev1', ports=['port0/line2','port0/line3'], timeout=5.0, analog_minmax=(-10,10)):
+    def __init__(self, device='Dev1', ports=[], timeout=5.0, saver=None):
         
         # DAQ properties
         pydaq.Task.__init__(self)
-        self.mode = mode
         self.device = device
         self.ports = ports
         self.timeout = timeout
         self.ports = ['/'.join([self.device,port]) for port in self.ports]
 
+        # Saving
+        self.saver = saver
+
         # Trigger properties
-        self.minn,self.maxx = analog_minmax
-        if self.mode == self.ANALOG_OUT:
-            self.clear_trig = Trigger(msg=[self.minn for _ in self.ports])
-        elif self.mode == self.DIGITAL_OUT:
-            self.clear_trig = Trigger(msg=[0,0,0,0], dtype=np.uint8)
+        self.msg = Trigger(msg=[0 for i in self.ports])
         
         # Setup task
         try:
-            if self.mode == self.DIGITAL_OUT:
-                for port in self.ports:
-                    self.CreateDOChan(port, "OutputOnly", pydaq.DAQmx_Val_ChanForAllLines)
-
-            elif self.mode == self.ANALOG_OUT:
-                for port in self.ports:
-                    self.CreateAOVoltageChan(port, '', self.minn, self.maxx, pydaq.DAQmx_Val_Volts, None)
-
+            for port in self.ports:
+                self.CreateDOChan(port, "OutputOnly", pydaq.DAQmx_Val_ChanForAllLines)
             self.StartTask()
         except:
             warnings.warn("DAQ task did not successfully initialize")
             raise
 
-    def trigger(self, trig, clear=None):
-        if clear == None:
-            clear = self.clear_trig
-        try:
-            if self.mode == self.DIGITAL_OUT:
-                self.WriteDigitalLines(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,trig.msg,None,None)
-                if clear is not False:
-                    self.WriteDigitalLines(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,clear.msg,None,None)
+    def go(self, port_idx, value):
+        self.msg[port_idx] = value
 
-            elif self.mode == self.ANALOG_OUT:
-                self.WriteAnalogF64(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,trig.msg,None,None)
-                if clear is not False:
-                    self.WriteAnalogF64(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,clear.msg,None,None)
+        try:
+            self.WriteDigitalLines(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,self.msg.msg,None,None)
+            if self.saver is not None:
+                self.saver.write('daqout', dict(port=port_idx, value=value))
         except:
             logging.warning("DAQ task not functional. Attempted to write %s."%str(trig.msg))
             raise
 
-    def release(self):
+    def end(self):
         try:
             self.StopTask()
             self.ClearTask()
