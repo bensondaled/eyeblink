@@ -5,7 +5,7 @@ import warnings, logging
 from util import now,now2
 
 class Trigger(object):
-    def __init__(self, msg=[], duration=None, name='noname', dtype=np.float64):
+    def __init__(self, msg=[], duration=None, name='noname', dtype=np.uint8):
         self.duration = duration
         self.dtype = dtype
         self._msg = None
@@ -31,11 +31,8 @@ class DAQOut(pydaq.Task):
         self.ports = ['/'.join([self.device,port]) for port in self.ports]
         self.port_dict = {pn:idx for idx,pn in enumerate(port_names)}
 
-        # Saving
-        self.saver = saver
-
         # Trigger properties
-        self.msg = Trigger(msg=[0 for i in self.ports])
+        self.trig = Trigger(msg=[0 for i in self.ports])
         
         # Setup task
         try:
@@ -47,14 +44,12 @@ class DAQOut(pydaq.Task):
             raise
 
     def go(self, port_name, value):
-        self.msg[self.port_dict[port_name]] = value
+        self.trig.msg[self.port_dict[port_name]] = value
 
         try:
-            self.WriteDigitalLines(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,self.msg.msg,None,None)
-            if self.saver is not None:
-                self.saver.write('daqout', dict(port=port_name, value=value))
+            self.WriteDigitalLines(1,1,self.timeout,pydaq.DAQmx_Val_GroupByChannel,self.trig.msg,None,None)
         except:
-            logging.warning("DAQ task not functional. Attempted to write %s."%str(trig.msg))
+            logging.warning("DAQ task not functional. Attempted to write %s."%str(self.trig.msg))
             raise
 
     def end(self):
