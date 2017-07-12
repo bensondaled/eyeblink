@@ -15,15 +15,16 @@ class Experiment():
         self.save_dir = os.path.join(settings.save_dir, name)
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-        data_filename = '{}_data.csv'
-        cam_filename = '{}_video.h5'
+        data_filename = '{}_data.csv'.format(name)
+        cam_filename = '{}_video.h5'.format(name)
         self.data_file = os.path.join(self.save_dir, data_filename)
         self.cam_file = os.path.join(self.save_dir, cam_filename)
         self.fieldnames = ['log_time','trial_idx','start_time','end_time','start_clock','end_clock','cs_ts0','cs_ts1','us_ts0','us_ts1','kind']
 
         # Initialize hardware
         self.cam = PSEye(save_name=self.cam_file, **settings.cam_params)
-        self.daq = DAQOut(ports=settings.daq_ports)
+        self.daq_cs = DAQOut(**settings.daq_cs_settings)
+        self.daq_us = DAQOut(**settings.daq_us_settings)
 
         # Register events
         atexit.register(self.end)
@@ -35,7 +36,7 @@ class Experiment():
     def run(self):
        
         # open data logging file
-        self.df_handle = open(self.data_file)
+        self.df_handle = open(self.data_file, 'a')
         self.logger = csv.DictWriter(self.df_handle, fieldnames=self.fieldnames)
         self.logger.writeheader()
 
@@ -54,29 +55,29 @@ class Experiment():
     def send_stim(self, kind):
         if kind == settings.CS:
             t = (now(), now2())
-            self.daq.go(settings.lines['cs'], 1)
+            self.daq_cs.go('cs', 1)
             self.wait(settings.cs_duration)
-            self.daq.go(settings.lines['cs'], 0)
+            self.daq_cs.go('cs', 0)
             stim_time = [t,(-1,-1)]
 
         elif kind == settings.US:
             self.wait(settings.cs_duration) # for trial continuity
             t = (now(), now2())
-            self.daq.go(settings.lines['us'], 1)
+            self.daq_us.go('us', 1)
             self.wait(settings.us_duration)
-            self.daq.go(settings.lines['us'], 0)
+            self.daq_us.go('us', 0)
             stim_time = [(-1,-1),t]
 
         elif kind == settings.CSUS:
             t_cs = (now(), now2())
-            self.daq.go(settings.lines['cs'], 1)
+            self.daq_cs.go('cs', 1)
             self.wait(settings.cs_us_interval)
             t_us = (now(), now2())
-            self.daq.go(settings.lines['us'], 1)
+            self.daq_us.go('us', 1)
             self.wait(settings.us_duration) # assumes US ends before settings.CS does
-            self.daq.go(settings.lines['us'], 0)
+            self.daq_us.go('us', 0)
             self.wait(settings.cs_duration, t0=t_cs[0])
-            self.daq.go(settings.lines['cs'], 0)
+            self.daq_cs.go('cs', 0)
             stim_time = [t_cs,t_us]
 
         return stim_time
@@ -110,11 +111,14 @@ class Experiment():
         end_time = now2()
         self.cam.set_flush(True)
 
+        self.wait(settings.iti)
+        
         # log trial info
         trial_dict = dict(
+                            log_time    = now(),
                             start_time  = start_time,
                             start_clock = start_clock,
-                            end_time    = trial_off,
+                            end_time    = end_time,
                             end_clock   = end_clock,
                             cs_ts0      = cs_time[0],
                             cs_ts1      = cs_time[1],
@@ -124,6 +128,7 @@ class Experiment():
                             trial_idx   = self.trial_idx,
         )
         self.logger.writerow(trial_dict)
+        
 
     def end(self):
         try:
@@ -152,9 +157,9 @@ if __name__ == '__main__':
     print('Now running experiment:\t', name)
 
     exp = Experiment(name=name)
-    threading.thread(target=exp.run).start()
+    threading.Thread(target=exp.run).start()
 
-    stop = input('Hit enter to stop experiment.')
+    stop = raw_input('Hit enter to stop experiment.')
     exp.kill_flag = True
 
     print('Experiment ending...')
