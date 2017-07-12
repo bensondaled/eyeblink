@@ -1,3 +1,8 @@
+# TODO:
+"""
+Auto-store experiment code in data directories
+"""
+
 # Imports
 from __future__ import print_function
 from hardware import DAQOut, PSEye
