@@ -58,7 +58,7 @@ def mp2np(a):
     return np.frombuffer(a.get_obj(), dtype=np.uint8)
 
 class MovieSaver(threading.Thread):
-    def __init__(self, name, kill_flag, frame_buffer, flushing, query_idx=0, buffer_size=6000, hdf_resize=30000, min_flush=200, n_cams=1, resolution=None):
+    def __init__(self, name, kill_flag, frame_buffer, flushing, query_idx=0, buffer_size=1600, hdf_resize=30000, min_flush=200, n_cams=1, resolution=None):
         super(MovieSaver, self).__init__()
         self.daemon = True
 
