@@ -57,8 +57,8 @@ def CLEyeCameraGetFrameDimensions(dll, cam):
 def mp2np(a):
     return np.frombuffer(a.get_obj(), dtype=np.uint8)
 
-class MovieSaver(threading.Thread):
-    def __init__(self, name, kill_flag, frame_buffer, flushing, query_idx=0, buffer_size=1600, hdf_resize=30000, min_flush=200, n_cams=1, resolution=None):
+class MovieSaver(mp.Process):
+    def __init__(self, name, kill_flag, frame_buffer, flushing, query_idx=0, buffer_size=1600, hdf_resize=30000, min_flush=1000, n_cams=1, resolution=None):
         super(MovieSaver, self).__init__()
         self.daemon = True
 
@@ -245,7 +245,7 @@ class PSEye():
     def begin_saving(self):
         self.saving.value = True
         
-class _PSEye(mp.Process):
+class _PSEye(threading.Thread):
     """
     An object that runs as its own process, serving the role of containing and calling the PSEye driver API
     Constantly checks for the presence of new frames and dumps them into multiprocessing queue

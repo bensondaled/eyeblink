@@ -60,29 +60,20 @@ class Experiment():
     def send_stim(self, kind):
         if kind == settings.CS:
             t = (now(), now2())
-            self.daq_cs.go('cs', 1)
-            self.wait(settings.cs_duration)
-            self.daq_cs.go('cs', 0)
+            self.daq_cs.go('cs', settings.ttl_gap)
             stim_time = [t,(-1,-1)]
 
         elif kind == settings.US:
             self.wait(settings.cs_duration) # for trial continuity
             t = (now(), now2())
-            self.daq_us.go('us', 1)
-            self.wait(settings.us_duration)
-            self.daq_us.go('us', 0)
+            self.daq_us.go('us', settings.ttl_gap)
             stim_time = [(-1,-1),t]
 
         elif kind == settings.CSUS:
             t_cs = (now(), now2())
-            self.daq_cs.go('cs', 1)
-            self.wait(settings.cs_us_interval)
-            t_us = (now(), now2())
-            self.daq_us.go('us', 1)
-            self.wait(settings.us_duration) # assumes US ends before settings.CS does
-            self.daq_us.go('us', 0)
-            self.wait(settings.cs_duration, t0=t_cs[0])
-            self.daq_cs.go('cs', 0)
+            t_us = (t_cs[0]+settings.cs_us_interval, t_cs[1]+settings.cs_us_interval)
+            self.daq_cs.go('cs', settings.ttl_gap)
+            self.daq_us.go('us', settings.ttl_gap)
             stim_time = [t_cs,t_us]
 
         return stim_time
